@@ -39,19 +39,16 @@ const Login = () => {
       sessionStorage.getItem("signin_post_logout_cleanup") ||
       localStorage.getItem("signin_post_logout_cleanup");
     if (postLogoutCleanup === "1") {
+      localStorage.clear();
       [
         "signin_username",
         "signin_password",
         "signin_login_count",
         "signin_login_tag",
-        "signin_sso_url",
-        "signin_sso_client_id",
       ].forEach((key) => {
-        localStorage.removeItem(key);
         sessionStorage.removeItem(key);
       });
       sessionStorage.removeItem("signin_post_logout_cleanup");
-      localStorage.removeItem("signin_post_logout_cleanup");
     }
     checkUserLogin();
     const prefilledUsername = (location.state as { username?: string } | null)
@@ -67,8 +64,6 @@ const Login = () => {
       "signin_password",
       "signin_login_count",
       "signin_login_tag",
-      "signin_sso_url",
-      "signin_sso_client_id",
     ].forEach((key) => {
       localStorage.removeItem(key);
       sessionStorage.removeItem(key);

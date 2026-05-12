@@ -4,6 +4,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"lazyrag/core/log"
 	"lazyrag/core/migrate"
 	"lazyrag/core/store"
+	"lazyrag/core/wordgroup"
 )
 
 //go:embed docs.html
@@ -64,7 +66,7 @@ func exportOpenAPIArtifacts(openAPIJSON []byte) {
 // handleAPI textPermissiontext。perms text extract_api_permissions.py text api_permissions.json（Kong RBAC），
 // text core text（text Kong + auth-service Authorization）。text gorilla/mux，text path text，text ":action" text。
 func handleAPI(r *mux.Router, method, path string, perms []string, h http.HandlerFunc) {
-	r.HandleFunc(path, h).Methods(method)
+	r.HandleFunc(path, withMutationRequestAudit(method, path, h)).Methods(method)
 }
 
 func main() {
@@ -157,12 +159,12 @@ func main() {
 	r.HandleFunc("/openapi.yaml", func(w http.ResponseWriter, r *http.Request) {
 		var m map[string]interface{}
 		if err := json.Unmarshal(openAPIJSON, &m); err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			common.ReplyErr(w, fmt.Sprintf("%s: %v", "request failed", err), http.StatusInternalServerError)
 			return
 		}
 		out, err := yaml.Marshal(m)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			common.ReplyErr(w, fmt.Sprintf("%s: %v", "request failed", err), http.StatusInternalServerError)
 			return
 		}
 		w.Header().Set("Content-Type", "application/x-yaml")
@@ -172,6 +174,8 @@ func main() {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Write(swaggerUIHTML)
 	}).Methods(http.MethodGet)
+
+	go wordgroup.StartPeriodicVocabExtract(context.Background())
 
 	log.Logger.Info().Msg("Core listening on :8000")
 	if err := http.ListenAndServe(":8000", r); err != nil {

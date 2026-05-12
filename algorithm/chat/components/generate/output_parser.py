@@ -16,7 +16,7 @@ class CustomOutputParser(ModuleBase):
         super().__init__(return_trace=return_trace, **kwargs)
         self.llm_type_think = llm_type_think
 
-    # ---------- 公共输出包装 ----------
+    # ---------- common output wrapper ----------
     def text_with_reference(
         self,
         *,
@@ -31,18 +31,18 @@ class CustomOutputParser(ModuleBase):
         metadata = node.metadata
         return {
             'index': index,
-            'number': metadata.get('store_num') or metadata.get('lazyllm_store_num') or -1,
-            'docid': gm.get('docid', 'file_id_example'),
+            'segment_number': metadata.get('store_num') or metadata.get('lazyllm_store_num') or -1,
+            'document_id': gm.get('docid', 'file_id_example'),
             'page': metadata.get('page', -1),
             'bbox': metadata.get('bbox', []),
-            'kb_id': gm.get('kb_id', 'kb_id_example'),
+            'dataset_id': gm.get('kb_id', 'kb_id_example'),
             'file_name': gm.get('file_name', 'title_example'),
-            'id': node._uid,
-            'text': node.text,
-            'group': node._group
+            'segement_id': node._uid,
+            'content': node.text,
+            'group_name': node._group
         }
 
-    # ================== 同步 ==================
+    # ================== sync ==================
     def _extract_citations(self, text: str, refs: Dict[int, Dict[str, str]], image_files: Dict[str, str]):
         refs = {index: self._replace_table_to_image(node) for index, node in refs.items()}
         plugins: List[BasePlugin] = [
@@ -60,7 +60,7 @@ class CustomOutputParser(ModuleBase):
             'sources': plugins[0].collect(),
         }
 
-    # ================== 流式 ==================
+    # ================== streaming ==================
     async def _extract_citations_stream(
         self,
         astream: AsyncIterator[str],
@@ -100,7 +100,7 @@ class CustomOutputParser(ModuleBase):
             generator = self._extract_citations_stream(input, nodes, image_files)
             return generator
         else:
-            # 非流式输出，直接生成答案。
+            # non-streaming output, generate answer directly.
             output = self._extract_citations(input, nodes, image_files)
             debug = kwargs.get('debug') or False
             recall_nodes = kwargs.get('recall_result') or []

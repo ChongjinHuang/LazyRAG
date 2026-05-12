@@ -14,6 +14,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from api.auth import router as auth_router
 from api.authorization import router as authorization_router
+from api.cloud_oauth import router as cloud_oauth_router
 from api.group import router as group_router
 from api.role import router as role_router
 from api.user import router as user_router
@@ -94,7 +95,7 @@ async def _log_request(request: Request, call_next):
             f'type={type(e).__name__} module={type(e).__module__} message={e}',
             flush=True,
         )
-        return JSONResponse(status_code=500, content={'code': 500, 'message': 'Internal Server Error', 'data': None})
+        return JSONResponse(status_code=500, content={'code': 500, 'message': 'Internal Server Error', 'ex_mesage': ''})
     cost_ms = int((time.time() - start) * 1000)
     if response.status_code >= 500:
         _logger.error(
@@ -179,20 +180,20 @@ async def _standardize_json_response(request: Request, call_next):
             media_type='application/json',
         )
 
-    if isinstance(payload, dict) and 'code' in payload and 'message' in payload and 'data' in payload:
-        payload['code'] = response.status_code
-        return JSONResponse(content=payload, status_code=response.status_code, headers=_copy_headers(response.headers))
-
     if 200 <= response.status_code < 300:
         wrapped = {'code': response.status_code, 'message': 'success', 'data': payload}
-    else:
-        msg = None
-        if isinstance(payload, dict):
-            msg = payload.get('message')
-        if not isinstance(msg, str) or not msg:
-            msg = 'An error occurred'
-        wrapped = {'code': response.status_code, 'message': msg, 'data': payload}
+        return JSONResponse(content=wrapped, status_code=response.status_code, headers=_copy_headers(response.headers))
 
+    if isinstance(payload, dict) and 'code' in payload and 'message' in payload:
+        payload.setdefault('ex_mesage', '')
+        return JSONResponse(content=payload, status_code=response.status_code, headers=_copy_headers(response.headers))
+
+    msg = None
+    if isinstance(payload, dict):
+        msg = payload.get('message')
+    if not isinstance(msg, str) or not msg:
+        msg = 'An error occurred'
+    wrapped = {'code': response.status_code, 'message': msg, 'ex_mesage': ''}
     return JSONResponse(content=wrapped, status_code=response.status_code, headers=_copy_headers(response.headers))
 
 
@@ -222,7 +223,7 @@ def _handle_http_exception(_, exc: StarletteHTTPException):
     message = exc.detail if isinstance(exc.detail, str) else 'HTTP error'
     return JSONResponse(
         status_code=exc.status_code,
-        content={'code': exc.status_code, 'message': message, 'data': None},
+        content={'code': exc.status_code, 'message': message, 'ex_mesage': ''},
     )
 
 
@@ -230,7 +231,11 @@ def _handle_http_exception(_, exc: StarletteHTTPException):
 def _handle_validation_error(_, exc: RequestValidationError):
     return JSONResponse(
         status_code=400,
-        content={'code': 400, 'message': 'Invalid request parameters', 'data': exc.errors()},
+        content={
+            'code': 400,
+            'message': 'Invalid request parameters',
+            'ex_mesage': json.dumps(exc.errors(), ensure_ascii=False),
+        },
     )
 
 
@@ -273,6 +278,7 @@ def openapi_yaml():
 
 app.include_router(auth_router, prefix=_API_PREFIX)
 app.include_router(authorization_router, prefix=_API_PREFIX)
+app.include_router(cloud_oauth_router, prefix=_API_PREFIX)
 app.include_router(user_router, prefix=_API_PREFIX)
 app.include_router(role_router, prefix=_API_PREFIX)
 app.include_router(group_router, prefix=_API_PREFIX)

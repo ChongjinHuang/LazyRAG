@@ -1,6 +1,13 @@
 -- 20260321131500_add_documents_pdf_convert_result (merged full init)
 -- +migrate Up
 
+CREATE TABLE IF NOT EXISTS "schema_migration_history" (
+  "version" bigint NOT NULL,
+  "name" varchar(255) NOT NULL DEFAULT '',
+  "applied_at" timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY ("version")
+);
+
 -- ACL tables
 
 CREATE TABLE "acl_visibility" (
@@ -58,7 +65,7 @@ CREATE TABLE "prompts" (
   "deleted_at" timestamptz,
   PRIMARY KEY ("id")
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "idx_prompts_name" ON "prompts" ("name");
+CREATE UNIQUE INDEX IF NOT EXISTS "uk_prompts_user_name" ON "prompts" ("create_user_id", "name");
 
 CREATE TABLE "default_prompts" (
   "id" bigserial,

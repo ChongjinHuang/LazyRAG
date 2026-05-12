@@ -78,6 +78,7 @@ class Qwen3Rerank(LazyLLMOnlineRerankModuleBase):
         embed_model_name: str = 'Qwen3Reranker',
         embed_url: Optional[str] = None,
         api_key: str = 'api_key',
+        skip_auth: bool = True,
         batch_size: int = 64,
         truncate_text: bool = True,
         output_format: Optional[str] = None,
@@ -87,7 +88,12 @@ class Qwen3Rerank(LazyLLMOnlineRerankModuleBase):
         timeout: Optional[float] = None,
         **kwargs: Any,
     ) -> None:
-        super().__init__(embed_url=embed_url, api_key=api_key, embed_model_name=embed_model_name)
+        super().__init__(
+            embed_url=embed_url,
+            api_key='' if skip_auth else (api_key or ''),
+            embed_model_name=embed_model_name,
+            skip_auth=skip_auth,
+        )
         if not embed_url:
             raise ValueError('`url` is required, pass the remote reranking service address.')
 
