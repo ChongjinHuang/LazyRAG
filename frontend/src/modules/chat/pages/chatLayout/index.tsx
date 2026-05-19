@@ -6,7 +6,6 @@ import {
   ChatConversationsRequestActionEnum,
   ChatConversationsResponseFinishReasonEnum,
   ChatHistory as BaseChatHistory,
-  Conversation,
   Query,
 } from "@/api/generated/chatbot-client";
 
@@ -18,7 +17,6 @@ import ChatContainerComponent, {
 } from "@/modules/chat/components/newChatContainer";
 import "./index.scss";
 import { RoleTypes } from "@/modules/chat/constants/common";
-import RecordList from "@/modules/chat/components/RecordList";
 import UIUtils from "@/modules/chat/utils/ui";
 import InitialCard from "@/modules/chat/components/InitialCard";
 import { ChatConfig } from "@/modules/chat/components/ChatConfigs";
@@ -28,7 +26,6 @@ import {
   CHAT_STREAM_URL,
   ChatServiceApi,
 } from "@/modules/chat/utils/request";
-import { CloseOutlined } from "@ant-design/icons";
 import { useChatMessageStore } from "@/modules/chat/store/chatMessage";
 import {
   useModelSelectionStore,
@@ -36,7 +33,13 @@ import {
   parseModelSelectionFromModels,
 } from "@/modules/chat/store/modelSelection";
 import { allowedUploadTypes } from "@/modules/chat/components/ImageUpload";
-import { CHAT_RESUME_CONVERSATION_KEY } from "@/modules/chat/constants/chat";
+import {
+  CHAT_RESUME_CONVERSATION_KEY,
+  CHAT_SELECT_CONVERSATION_EVENT,
+} from "@/modules/chat/constants/chat";
+import { normalizeMessageInputs } from "@/modules/chat/utils/message";
+import { splitThinkingContent } from "@/modules/chat/utils/thinking";
+import { buildEnvironmentContext } from "@/modules/chat/utils/environment";
 interface IChatLayoutProps {
   setIsChatContent: (isChatContent: boolean) => void;
   initchatConfig: ChatConfig;
@@ -50,10 +53,17 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
   const [chatConfig, setChatConfig] = useState<ChatConfig>(
     initchatConfig || {},
   );
+  const [knowledgeRefreshKey, setKnowledgeRefreshKey] = useState(0);
+  const [isRestoringConversation, setIsRestoringConversation] = useState(() => {
+    try {
+      return Boolean(sessionStorage.getItem(CHAT_RESUME_CONVERSATION_KEY));
+    } catch {
+      return false;
+    }
+  });
 
   const { pendingMessage, clearPendingMessage } = useChatMessageStore();
   const { getModelSelection, setModelSelection } = useModelSelectionStore();
-  const [showHistoryList, setShowHistoryList] = useState(true);
 
   const chatRef = useRef<ChatImperativeProps>(null);
 
@@ -82,6 +92,7 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
     if (!conversationId) {
       return;
     }
+    setIsRestoringConversation(true);
     const resolveConversationId = (id: string): Promise<string> => {
       if (!id || !id.startsWith("temp_")) {
         return Promise.resolve(id);
@@ -130,7 +141,8 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         };
         setChatConfig(tempData);
         setChatConfigFn(tempData);
-        setSessionId(resolvedId);
+        setKnowledgeRefreshKey((key) => key + 1);
+        setConversationId(resolvedId);
 
         const modelSelection = parseModelSelectionFromModels(
           (conversation as any)?.models,
@@ -141,16 +153,25 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         if (history?.length) {
           const lastHistory = history[history.length - 1];
           history.forEach((record: ChatHistory) => {
+            const normalizedInputs = normalizeMessageInputs(
+              record.input,
+              record.query,
+            );
+            const textInput = normalizedInputs.find((input) => {
+              const inputType = input.input_type || "text";
+              return inputType === "text" && !!input.text;
+            });
+
             list.push({
               role: RoleTypes.USER,
-              delta: record.query,
-              images: record.input
+              delta: record.query || textInput?.text || "",
+              images: normalizedInputs
                 ?.filter((i: any) => i.input_type === "image")
                 .map((img: any) => ({
                   base64: img?.input_base64,
                   uid: img.file_id,
                 })),
-              files: record.input
+              files: normalizedInputs
                 ?.filter((i: any) => i.input_type === "file")
                 .map((f: any) => ({
                   name: f?.uri?.split("/").pop(),
@@ -158,16 +179,25 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
                 })),
               finish_reason:
                 ChatConversationsResponseFinishReasonEnum.FinishReasonStop,
-              inputs: record.input,
+              inputs: normalizedInputs,
               create_time: record.create_time || "",
             });
             const isLastRecord = record === lastHistory;
             const isActuallyGenerating =
               isLastRecord && (!record.result || record.result === "");
+            const splitResult = splitThinkingContent(
+              record.result,
+              record.reasoning_content,
+            );
+            const secondSplitResult = splitThinkingContent(
+              record.second_result,
+              record.second_reasoning_content,
+            );
             const assistantMsg: any = {
               role: RoleTypes.ASSISTANT,
-              reasoning_content: record.reasoning_content,
-              delta: record.result || "",
+              reasoning_content: splitResult.reasoning_content,
+              delta: splitResult.content,
+              raw_delta: record.result || "",
               finish_reason: isActuallyGenerating
                 ? ChatConversationsResponseFinishReasonEnum.FinishReasonUnspecified
                 : ChatConversationsResponseFinishReasonEnum.FinishReasonStop,
@@ -178,17 +208,19 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
             if (record.second_result && record.second_id) {
               assistantMsg.answers = [
                 {
-                  content: record.result || "",
+                  content: splitResult.content,
                   index: 0,
                   history_id: record.id,
-                  reasoning_content: record.reasoning_content || "",
+                  reasoning_content: splitResult.reasoning_content,
+                  raw_content: record.result || "",
                   sources: record.sources,
                 },
                 {
-                  content: record.second_result,
+                  content: secondSplitResult.content,
                   index: 1,
                   history_id: record.second_id,
-                  reasoning_content: record.second_reasoning_content || "",
+                  reasoning_content: secondSplitResult.reasoning_content,
+                  raw_content: record.second_result || "",
                 },
               ];
               assistantMsg.reasoning_content = "";
@@ -246,9 +278,11 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         } else {
           sessionStorage.removeItem(CHAT_RESUME_CONVERSATION_KEY);
         }
+        setIsRestoringConversation(false);
       })
       .catch(() => {
         sessionStorage.removeItem(CHAT_RESUME_CONVERSATION_KEY);
+        setIsRestoringConversation(false);
       });
   }, []);
 
@@ -278,7 +312,7 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         Accept: "text/event-stream",
         ...AgentAppsAuth.getAuthHeaders(),
       },
-      timeout: 300000,
+      timeout: 1800000,
       payload: JSON.stringify({
         action,
         conversation_id: sessionId,
@@ -292,14 +326,15 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         },
         models:
           modelSelection === "both"
-            ? [MODEL_API_LABELS.lazyRag, MODEL_API_LABELS.deepSeek]
+            ? [MODEL_API_LABELS.lazyMind, MODEL_API_LABELS.deepSeek]
             : modelSelection === "value_engineering"
-              ? [MODEL_API_LABELS.lazyRag]
+              ? [MODEL_API_LABELS.lazyMind]
               : [MODEL_API_LABELS.deepSeek],
         // enable_thinking: think ? true : false,
         stream: true,
         input,
         create_time: new Date().toISOString(),
+        environment_context: buildEnvironmentContext(),
       }),
       callbacks,
     });
@@ -316,7 +351,7 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         Accept: "text/event-stream",
         ...AgentAppsAuth.getAuthHeaders(),
       },
-      timeout: 300000,
+      timeout: 1800000,
       payload: JSON.stringify({ conversation_id: conversationId }),
       callbacks,
     });
@@ -327,12 +362,18 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
       return;
     }
     setSessionId(id);
+    window.dispatchEvent(
+      new CustomEvent(CHAT_SELECT_CONVERSATION_EVENT, {
+        detail: { conversationId: id, source: "chat" },
+      }),
+    );
   }
 
-  function onRecordSelected(data: Conversation) {
+  function loadConversation(conversationId: string) {
+    setIsRestoringConversation(true);
     ChatServiceApi()
       .conversationServiceGetConversationDetail({
-        conversation: data.conversation_id || "",
+        conversation: conversationId,
       })
       .then((res) => {
         const conversation = res.data.conversation;
@@ -346,6 +387,7 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         };
         setChatConfig(tempData);
         setChatConfigFn(tempData);
+        setKnowledgeRefreshKey((key) => key + 1);
 
         const modelSelection = parseModelSelectionFromModels(
           (conversation as any)?.models,
@@ -359,11 +401,20 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         const list: ChatMessage[] = [];
         if (history && history.length > 0) {
           history.forEach((record: ChatHistory) => {
+            const normalizedInputs = normalizeMessageInputs(
+              record.input,
+              record.query,
+            );
+            const textInput = normalizedInputs.find((input) => {
+              const inputType = input.input_type || "text";
+              return inputType === "text" && !!input.text;
+            });
+
             // Push user.
             list.push({
               role: RoleTypes.USER,
-              delta: record.query,
-              images: record.input
+              delta: record.query || textInput?.text || "",
+              images: normalizedInputs
                 ?.filter((input) => {
                   return input.input_type === "image";
                 })
@@ -373,7 +424,7 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
                     uid: image.file_id,
                   };
                 }),
-              files: record.input
+              files: normalizedInputs
                 ?.filter((input) => {
                   return input.input_type === "file";
                 })
@@ -382,18 +433,27 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
                     name: file?.uri?.split("/").pop(),
                     uid: file.file_id,
                   };
-                }),
+              }),
               finish_reason:
                 ChatConversationsResponseFinishReasonEnum.FinishReasonStop,
-              inputs: record.input,
+              inputs: normalizedInputs,
               create_time: record.create_time || "xxx-xxx-xxx",
             });
 
             // Push assistant.
+            const splitResult = splitThinkingContent(
+              record.result,
+              record.reasoning_content,
+            );
+            const secondSplitResult = splitThinkingContent(
+              record.second_result,
+              record.second_reasoning_content,
+            );
             const assistantMessage: any = {
               role: RoleTypes.ASSISTANT,
-              reasoning_content: record.reasoning_content,
-              delta: record.result,
+              reasoning_content: splitResult.reasoning_content,
+              delta: splitResult.content,
+              raw_delta: record.result || "",
               finish_reason:
                 ChatConversationsResponseFinishReasonEnum.FinishReasonStop,
               history_id: record.id,
@@ -405,18 +465,20 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
             if (record.second_result && record.second_id) {
               assistantMessage.answers = [
                 {
-                  content: record.result || "",
+                  content: splitResult.content,
                   index: 0,
                   history_id: record.id,
-                  reasoning_content: record.reasoning_content || "",
+                  reasoning_content: splitResult.reasoning_content,
+                  raw_content: record.result || "",
                   sources: record.sources,
                   thinking_duration_s: record.thinking_time_s,
                 },
                 {
-                  content: record.second_result,
+                  content: secondSplitResult.content,
                   index: 1,
                   history_id: record.second_id,
-                  reasoning_content: record.second_reasoning_content || "",
+                  reasoning_content: secondSplitResult.reasoning_content,
+                  raw_content: record.second_result || "",
                   sources: record.sources,
                   thinking_duration_s: record.second_thinking_time_s,
                 },
@@ -433,14 +495,44 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
           conversation?.conversation_id || "",
           list,
         );
+      })
+      .finally(() => {
+        setIsRestoringConversation(false);
       });
   }
 
-  function deleteHistory(data: Conversation) {
-    if (data.conversation_id === sessionId) {
-      chatRef.current?.createNewChat();
-    }
-  }
+  useEffect(() => {
+    const handleConversationSelect = (event: Event) => {
+      const detail =
+        (event as CustomEvent<{ conversationId?: string; source?: string }>)
+          .detail || {};
+      if (detail.source !== "sidebar") {
+        return;
+      }
+      const conversationId = detail.conversationId || "";
+      if (!conversationId) {
+        setIsRestoringConversation(false);
+        chatRef.current?.createNewChat();
+        return;
+      }
+      if (conversationId === sessionId) {
+        return;
+      }
+      setIsChatContent(true);
+      loadConversation(conversationId);
+    };
+
+    window.addEventListener(
+      CHAT_SELECT_CONVERSATION_EVENT,
+      handleConversationSelect,
+    );
+    return () => {
+      window.removeEventListener(
+        CHAT_SELECT_CONVERSATION_EVENT,
+        handleConversationSelect,
+      );
+    };
+  }, [sessionId, setIsChatContent]);
 
   function parseErrorData(data: string) {
     const dataObject = UIUtils.jsonParser(data) || {};
@@ -517,41 +609,19 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
       )}
       <ChatContainerComponent
         ref={chatRef}
-        initialCard={<InitialCard />}
+        initialCard={isRestoringConversation ? null : <InitialCard />}
         sessionId={sessionId}
         onOpenSSE={onOpenSSE}
         onOpenResumeSSE={onOpenResumeSSE}
         onConversationIdChange={setConversationId}
         parseErrorData={parseErrorData}
-        setShowHistoryList={() => setShowHistoryList(!showHistoryList)}
-        showHistoryList={showHistoryList}
+        showHistoryButton={false}
         setIsChatContent={setIsChatContent}
         chatConfig={chatConfig}
         setChatConfig={setChatConfig}
         setChatConfigFn={setChatConfigFn}
+        knowledgeRefreshKey={knowledgeRefreshKey}
       />
-      {showHistoryList && (
-        <div className="right-box">
-          <CloseOutlined
-            style={{
-              position: "absolute",
-              top: 12,
-              right: 12,
-              fontSize: 20,
-              cursor: "pointer",
-              opacity: 0.45,
-            }}
-            onClick={() => {
-              setShowHistoryList(false);
-            }}
-          />
-          <RecordList
-            currentSessionId={sessionId}
-            onSelected={onRecordSelected}
-            onRemove={deleteHistory}
-          />
-        </div>
-      )}
     </div>
   );
 };

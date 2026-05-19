@@ -31,6 +31,7 @@ import {
 } from "antd";
 import type { MenuProps } from "antd";
 import moment from "moment";
+import { getLocalizedTablePagination } from "@/components/ui/pagination";
 import {
   FOLDER_NAME_REG,
   TIME_FORMAT,
@@ -172,7 +173,7 @@ const KnowledgeTable = forwardRef<IKnowledgeListRef, Props>((props, ref) => {
 
   const [showCopyModal, setShowCopyModal] = useState(false);
   const [currentDocInfo, setCurrentDocInfo] = useState({});
-  const [action, setAction] = useState<"copy" | "move">("copy");
+  const [action, setAction] = useState<"copy" | "move">("move");
   const [showTagEditModal, setShowTagEditModal] = useState(false);
   const [tagEditRecord, setTagEditRecord] = useState<TreeNode | null>(null);
 
@@ -294,6 +295,8 @@ const KnowledgeTable = forwardRef<IKnowledgeListRef, Props>((props, ref) => {
           : t("knowledge.deleteDocConfirmWithName", {
               name: `【${records[0].display_name}】`,
             }),
+      okText: t("common.confirm"),
+      cancelText: t("common.cancel"),
       onOk: () => {
         DocumentServiceApi()
           .documentServiceBatchDeleteDocument({
@@ -940,11 +943,6 @@ const KnowledgeTable = forwardRef<IKnowledgeListRef, Props>((props, ref) => {
             label: t("common.edit"),
           },
           {
-            key: "copy",
-            label: t("knowledge.copyTo"),
-            disabled: !detail?.acl?.includes("DATASET_READ"),
-          },
-          {
             key: "move",
             label: t("knowledge.moveTo"),
             disabled: !detail?.acl?.includes("DATASET_WRITE"),
@@ -1120,12 +1118,6 @@ const KnowledgeTable = forwardRef<IKnowledgeListRef, Props>((props, ref) => {
           targetPath: parents.map((item) => item.display_name).join("/"),
           p_id: record.document_id,
         });
-        break;
-      }
-      case "copy": {
-        setAction("copy");
-        setShowCopyModal(true);
-        setCurrentDocInfo(record);
         break;
       }
       case "move": {
@@ -1366,11 +1358,11 @@ const KnowledgeTable = forwardRef<IKnowledgeListRef, Props>((props, ref) => {
       <Table<TreeNode>
         columns={columns as ColumnType<TreeNode>[]}
         dataSource={tableData}
-        pagination={{
+        pagination={getLocalizedTablePagination({
           ...pagination,
           showSizeChanger: true,
           showTotal: (total: number) => t("knowledge.totalCount", { total }),
-        }}
+        }, t)}
         onChange={onTableChange}
         rowKey="document_id"
         scroll={{ x: 1600, y: "calc(100vh - 380px)" }}

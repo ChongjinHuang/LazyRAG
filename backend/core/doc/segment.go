@@ -3,17 +3,18 @@ package doc
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 
-	"lazyrag/core/acl"
-	"lazyrag/core/common"
-	"lazyrag/core/common/orm"
-	"lazyrag/core/log"
-	"lazyrag/core/store"
+	"lazymind/core/acl"
+	"lazymind/core/common"
+	"lazymind/core/common/orm"
+	"lazymind/core/log"
+	"lazymind/core/store"
 )
 
 type SegmentItem struct {
@@ -68,10 +69,14 @@ func ListSegments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageSize := parseSegmentPageSize(r, nil)
-	page := parseSegmentPage(r, nil)
+	page, err := parseSegmentPage(r, nil, pageSize)
+	if err != nil {
+		common.ReplyErr(w, fmt.Sprintf("%s: %v", "invalid page_token", err), http.StatusBadRequest)
+		return
+	}
 	raw, queryURL, err := fetchChunksPage(r, datasetID, documentID, lazyDocID, algoID, group, page, pageSize, "ListSegments")
 	if err != nil {
-		common.ReplyErr(w, err.Error(), http.StatusBadGateway)
+		common.ReplyAppErr(w, common.ResolveAppError(err.Error(), http.StatusBadGateway))
 		return
 	}
 	segments, totalSize, nextPageToken := parseChunkSearchResponse(datasetID, documentID, raw, page, pageSize)
@@ -101,10 +106,14 @@ func SearchSegments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pageSize := parseSegmentPageSize(r, body)
-	page := parseSegmentPage(r, body)
+	page, err := parseSegmentPage(r, body, pageSize)
+	if err != nil {
+		common.ReplyErr(w, fmt.Sprintf("%s: %v", "invalid page_token", err), http.StatusBadRequest)
+		return
+	}
 	raw, _, err := fetchChunksPage(r, datasetID, documentID, lazyDocID, algoID, group, page, pageSize, "SearchSegments")
 	if err != nil {
-		common.ReplyErr(w, err.Error(), http.StatusBadGateway)
+		common.ReplyAppErr(w, common.ResolveAppError(err.Error(), http.StatusBadGateway))
 		return
 	}
 	segments, totalSize, nextPageToken := parseChunkSearchResponse(datasetID, documentID, raw, page, pageSize)
@@ -123,7 +132,7 @@ func GetSegment(w http.ResponseWriter, r *http.Request) {
 	}
 	segment, found, err := fetchSegmentByID(r, datasetID, documentID, lazyDocID, algoID, group, segmentID)
 	if err != nil {
-		common.ReplyErr(w, err.Error(), http.StatusBadGateway)
+		common.ReplyAppErr(w, common.ResolveAppError(err.Error(), http.StatusBadGateway))
 		return
 	}
 	if !found {
@@ -146,20 +155,42 @@ func parseSegmentPageSize(r *http.Request, body *segmentSearchInput) int {
 	return pageSize
 }
 
-func parseSegmentPage(r *http.Request, body *segmentSearchInput) int {
+func parseSegmentPage(r *http.Request, body *segmentSearchInput, pageSize int) (int, error) {
+	resolvePageFromToken := func(token string) (int, error) {
+		token = strings.TrimSpace(token)
+		if token == "" {
+			return 0, nil
+		}
+		if v, err := strconv.Atoi(token); err == nil && v > 0 {
+			return v, nil
+		}
+		offset, err := parseDatasetPageToken(token)
+		if err != nil {
+			return 0, err
+		}
+		if pageSize <= 0 {
+			pageSize = 20
+		}
+		return offset/pageSize + 1, nil
+	}
+
 	if body != nil {
-		if token := strings.TrimSpace(body.PageToken); token != "" {
-			if v, err := strconv.Atoi(token); err == nil && v > 0 {
-				return v
-			}
+		if page, err := resolvePageFromToken(body.PageToken); err != nil {
+			return 0, err
+		} else if page > 0 {
+			return page, nil
 		}
 	}
 	if token := firstNonEmptyQuery(r, "page_token", "pageToken", "cursor", "offset_token"); token != "" {
-		if v, err := strconv.Atoi(token); err == nil && v > 0 {
-			return v
+		page, err := resolvePageFromToken(token)
+		if err != nil {
+			return 0, err
+		}
+		if page > 0 {
+			return page, nil
 		}
 	}
-	return firstPositiveQueryInt(r, 1, "page", "page_no", "pageNo")
+	return firstPositiveQueryInt(r, 1, "page", "page_no", "pageNo"), nil
 }
 
 func parseSegmentGroup(r *http.Request, body *segmentSearchInput) string {
@@ -298,15 +329,40 @@ func fetchChunkGroupName(r *http.Request, algoID string) string {
 	return ""
 }
 
+// buildChunksURL constructs the /v1/chunks query URL.
+// algoID is now optional: when non-empty it is forwarded as a hint so DocServer
+// can use the algo-specific retriever; when empty DocServer resolves the algo
+// automatically via _find_algo_for_group (node-group refactor).
 func buildChunksURL(kbID, algoID, lazyDocID, group string, page, pageSize int) string {
 	params := url.Values{}
 	params.Set("kb_id", kbID)
 	params.Set("doc_id", lazyDocID)
 	params.Set("group", firstNonEmpty(group, "Chunk"))
-	params.Set("algo_id", firstNonEmpty(algoID, "__default__"))
+	if strings.TrimSpace(algoID) != "" {
+		params.Set("algo_id", algoID)
+	}
 	params.Set("page", strconv.Itoa(page))
 	params.Set("page_size", strconv.Itoa(pageSize))
 	return common.JoinURL(common.AlgoServiceEndpoint(), "/v1/chunks") + "?" + params.Encode()
+}
+
+func buildParserChunksURL(kbID, algoID, lazyDocID, group string, page, pageSize int) string {
+	params := url.Values{}
+	params.Set("kb_id", kbID)
+	params.Set("doc_id", lazyDocID)
+	params.Set("group", firstNonEmpty(group, "Chunk"))
+	if strings.TrimSpace(algoID) != "" {
+		params.Set("algo_id", algoID)
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 20
+	}
+	params.Set("offset", strconv.Itoa((page-1)*pageSize))
+	params.Set("page_size", strconv.Itoa(pageSize))
+	return common.JoinURL(common.ParsingServiceEndpoint(), "/doc/chunks") + "?" + params.Encode()
 }
 
 func prepareSegmentRequest(w http.ResponseWriter, r *http.Request, handler string, body *segmentSearchInput) (datasetID, documentID, lazyDocID, algoID, group string, ok bool) {
@@ -326,7 +382,7 @@ func prepareSegmentRequest(w http.ResponseWriter, r *http.Request, handler strin
 	}
 	var docRow orm.Document
 	if err := store.DB().WithContext(r.Context()).Where("id = ? AND dataset_id = ? AND deleted_at IS NULL", documentID, datasetID).Take(&docRow).Error; err != nil {
-		common.ReplyErr(w, "document not found", http.StatusNotFound)
+		common.ReplyErr(w, fmt.Sprintf("%s: %v", "document not found", err), http.StatusNotFound)
 		return "", "", "", "", "", false
 	}
 	lazyDocID = strings.TrimSpace(docRow.LazyllmDocID)
@@ -372,7 +428,33 @@ func fetchChunksPage(r *http.Request, datasetID, documentID, lazyDocID, algoID, 
 			Str("group", strings.TrimSpace(group)).
 			Str("external_url", queryURL).
 			Msg("external chunks request failed")
-		return nil, queryURL, err
+		fallbackURL := buildParserChunksURL(datasetID, algoID, lazyDocID, group, page, pageSize)
+		log.Logger.Warn().
+			Err(err).
+			Str("handler", handler).
+			Str("dataset_id", datasetID).
+			Str("document_id", documentID).
+			Str("lazyllm_doc_id", lazyDocID).
+			Str("algo_id", strings.TrimSpace(algoID)).
+			Str("group", strings.TrimSpace(group)).
+			Str("external_url", fallbackURL).
+			Str("failed_external_url", queryURL).
+			Msg("falling back to parser chunks request")
+		if fallbackErr := common.ApiGet(r.Context(), fallbackURL, nil, &raw, 10_000_000_000); fallbackErr != nil {
+			log.Logger.Error().
+				Err(fallbackErr).
+				Str("handler", handler).
+				Str("dataset_id", datasetID).
+				Str("document_id", documentID).
+				Str("lazyllm_doc_id", lazyDocID).
+				Str("algo_id", strings.TrimSpace(algoID)).
+				Str("group", strings.TrimSpace(group)).
+				Str("external_url", fallbackURL).
+				Str("failed_external_url", queryURL).
+				Msg("fallback parser chunks request failed")
+			return nil, fallbackURL, fmt.Errorf("%w; fallback parser chunks failed: %v", err, fallbackErr)
+		}
+		return raw, fallbackURL, nil
 	}
 	return raw, queryURL, nil
 }
@@ -416,7 +498,7 @@ func parseChunkSearchResponse(datasetID, documentID string, raw map[string]any, 
 	total := extractChunkTotal(raw, len(segments))
 	nextPageToken := ""
 	if int(total) > page*pageSize {
-		nextPageToken = strconv.Itoa(page + 1)
+		nextPageToken = encodeDatasetPageToken(page*pageSize, pageSize, int(total))
 	}
 	return segments, total, nextPageToken
 }
@@ -492,6 +574,34 @@ func toInt32(v any) (int32, bool) {
 	return 0, false
 }
 
+func signSegmentImageKeys(keys []string) []string {
+	if len(keys) == 0 {
+		return keys
+	}
+	signed := make([]string, len(keys))
+	for i, key := range keys {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			signed[i] = key
+			continue
+		}
+		if strings.HasPrefix(key, "/static-files/") {
+			signed[i] = key
+			continue
+		}
+		if strings.HasPrefix(key, "http://") || strings.HasPrefix(key, "https://") {
+			signed[i] = key
+			continue
+		}
+		if url := staticFileURLFromFullPath(key); url != "" {
+			signed[i] = url
+			continue
+		}
+		signed[i] = key
+	}
+	return signed
+}
+
 func mapChunkToSegment(datasetID, documentID string, item map[string]any) SegmentItem {
 	meta := nestedMap(item, "metadata")
 	globalMetaMap := firstMap(item, nil, "global_metadata", "global_meta")
@@ -539,6 +649,7 @@ func mapChunkToSegment(datasetID, documentID string, item map[string]any) Segmen
 	if len(imageKeys) == 0 {
 		imageKeys = []string{}
 	}
+	imageKeys = signSegmentImageKeys(imageKeys)
 	if len(excludedEmbedMetadataKeys) == 0 {
 		excludedEmbedMetadataKeys = []string{}
 	}

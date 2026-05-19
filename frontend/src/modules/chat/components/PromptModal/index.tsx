@@ -50,6 +50,7 @@ const PromptModal = forwardRef<PromptImperativeProps, ForwardProps>(
     const [addModalVisible, setAddModalVisible] = useState(false);
     const [isEdit, setIsEdit] = useState(false);
     const [editPromptId, setEditPromptId] = useState<string | undefined>("");
+    const [activeTab, setActiveTab] = useState("custom");
 
     const [form] = Form.useForm();
 
@@ -65,13 +66,14 @@ const PromptModal = forwardRef<PromptImperativeProps, ForwardProps>(
 
     function fetchPromptList() {
       PromptServiceApi()
-        .promptServiceListPrompts({ pageSize: 2 })
+        .promptServiceListPrompts({ pageSize: 9999 })
         .then((res) => {
           setPromptList(res.data.prompts ? [...res.data?.prompts] : []);
         });
     }
 
     function onOpen() {
+      setActiveTab("custom");
       setVisible(true);
       fetchPromptList();
     }
@@ -277,7 +279,8 @@ const PromptModal = forwardRef<PromptImperativeProps, ForwardProps>(
         <Modal
           title={t("chat.promptTemplateTitle")}
           className="prompt-modal"
-          width={624}
+          width="clamp(320px, 62vw, 624px)"
+          centered
           open={visible}
           maskClosable
           closable
@@ -290,7 +293,8 @@ const PromptModal = forwardRef<PromptImperativeProps, ForwardProps>(
         >
           <div className="prompt-modal-container">
             <Tabs
-              defaultActiveKey="custom"
+              activeKey={activeTab}
+              onChange={setActiveTab}
               items={tabItems}
               className="prompt-modal-tabs"
             />
@@ -298,6 +302,9 @@ const PromptModal = forwardRef<PromptImperativeProps, ForwardProps>(
         </Modal>
         <Modal
           title={isEdit ? t("chat.editPromptTemplate") : t("chat.addPromptTemplate")}
+          className="prompt-edit-modal"
+          width="clamp(320px, 48vw, 520px)"
+          centered
           open={addModalVisible}
           maskClosable={false}
           closable
@@ -327,6 +334,11 @@ const PromptModal = forwardRef<PromptImperativeProps, ForwardProps>(
                 rows={5}
                 showCount
                 maxLength={800}
+                style={{
+                  width: "100%",
+                  height: "132px",
+                  resize: "none",
+                }}
               />
             </Form.Item>
           </Form>

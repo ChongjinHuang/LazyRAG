@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"time"
 
-	"lazyrag/core/common"
-	"lazyrag/core/log"
+	"lazymind/core/common"
+	"lazymind/core/log"
 )
 
 type addResultItem struct {
@@ -27,7 +27,6 @@ type addFileItem struct {
 type addRequest struct {
 	Items          []addFileItem `json:"items"`
 	KbID           string        `json:"kb_id,omitempty"`
-	AlgoID         string        `json:"algo_id,omitempty"`
 	SourceType     string        `json:"source_type,omitempty"`
 	IdempotencyKey string        `json:"idempotency_key,omitempty"`
 }
@@ -35,18 +34,18 @@ type addRequest struct {
 type reparseRequest struct {
 	DocIDs         []string `json:"doc_ids"`
 	KbID           string   `json:"kb_id,omitempty"`
-	AlgoID         string   `json:"algo_id,omitempty"`
+	NgNames        []string `json:"ng_names,omitempty"`
 	IdempotencyKey string   `json:"idempotency_key,omitempty"`
 }
 
+// transferItem no longer carries source/target algo IDs after the node-group
+// refactor; DocServer validates that both sides bind the same algo set.
 type transferItem struct {
-	DocID        string `json:"doc_id"`
-	TargetDocID  string `json:"target_doc_id,omitempty"`
-	SourceKbID   string `json:"source_kb_id,omitempty"`
-	SourceAlgoID string `json:"source_algo_id,omitempty"`
-	TargetKbID   string `json:"target_kb_id,omitempty"`
-	TargetAlgoID string `json:"target_algo_id,omitempty"`
-	Mode         string `json:"mode,omitempty"`
+	DocID       string `json:"doc_id"`
+	TargetDocID string `json:"target_doc_id,omitempty"`
+	SourceKbID  string `json:"source_kb_id,omitempty"`
+	TargetKbID  string `json:"target_kb_id,omitempty"`
+	Mode        string `json:"mode,omitempty"`
 }
 
 type transferRequest struct {
@@ -93,14 +92,67 @@ func callExternalAddDocs(r *http.Request, req addRequest) ([]addResultItem, erro
 	return parseAddResponse(resp, req), nil
 }
 
-func callExternalReparseDocs(r *http.Request, req reparseRequest) error {
-	var resp map[string]any
-	return common.ApiPost(r.Context(), common.JoinURL(parsingServiceEndpoint(), "/v1/docs/reparse"), req, nil, &resp, 15*time.Second)
+func callExternalReparseDocs(r *http.Request, req reparseRequest) ([]string, error) {
+	var resp reparseResponse
+	if err := common.ApiPost(r.Context(), common.JoinURL(parsingServiceEndpoint(), "/v1/docs/reparse"), req, nil, &resp, 15*time.Second); err != nil {
+		return nil, err
+	}
+	return parseReparseTaskIDs(resp), nil
+}
+
+type reparseResponse struct {
+	TaskIDs []string `json:"task_ids"`
+	Data    struct {
+		TaskIDs []string `json:"task_ids"`
+	} `json:"data"`
+}
+
+func parseReparseTaskIDs(resp reparseResponse) []string {
+	if len(resp.TaskIDs) > 0 {
+		return resp.TaskIDs
+	}
+	return resp.Data.TaskIDs
 }
 
 func callExternalTransferDocs(r *http.Request, req transferRequest) error {
+	url := common.JoinURL(parsingServiceEndpoint(), "/v1/docs/transfer")
+	log.Logger.Info().
+		Str("handler", "StartTask").
+		Str("external_url", url).
+		Int("items_count", len(req.Items)).
+		Any("request_body", req).
+		Msg("calling external transfer-docs request")
+	for i, item := range req.Items {
+		log.Logger.Info().
+			Str("handler", "StartTask").
+			Str("external_url", url).
+			Int("item_index", i).
+			Str("doc_id", item.DocID).
+			Str("target_doc_id", item.TargetDocID).
+			Str("source_kb_id", item.SourceKbID).
+			Str("target_kb_id", item.TargetKbID).
+			Str("mode", item.Mode).
+			Msg("calling external transfer-docs item")
+	}
 	var resp map[string]any
-	return common.ApiPost(r.Context(), common.JoinURL(parsingServiceEndpoint(), "/v1/docs/transfer"), req, nil, &resp, 15*time.Second)
+	if err := common.ApiPost(r.Context(), url, req, nil, &resp, 15*time.Second); err != nil {
+		log.Logger.Error().
+			Err(err).
+			Str("handler", "StartTask").
+			Str("external_url", url).
+			Int("items_count", len(req.Items)).
+			Any("request_body", req).
+			Msg("external transfer-docs request failed")
+		return err
+	}
+	log.Logger.Info().
+		Str("handler", "StartTask").
+		Str("external_url", url).
+		Int("items_count", len(req.Items)).
+		Any("request_body", req).
+		Any("response_body", resp).
+		Msg("external transfer-docs request succeeded")
+	return nil
 }
 
 func callExternalSuspendJob(r *http.Request, req ExternalCancelTaskRequest) error {

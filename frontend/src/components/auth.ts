@@ -1,10 +1,11 @@
 /**
- * Minimal auth for LazyRAG: getUserInfo from storage, logout redirect to /login.
+ * Minimal auth for LazyMind: getUserInfo from storage, logout redirect to /login.
  * Compatible with AuthServiceApi login (token stored after username/password login).
  */
 import axios from "axios";
 
-const STORAGE_KEY = "lazyrag:user";
+const STORAGE_KEY = "lazymind:user";
+export const AUTH_USER_CHANGE_EVENT = "lazymind:user-change";
 
 const BASE_URL =
   (typeof import.meta !== "undefined" &&
@@ -75,6 +76,10 @@ function getStored(): UserInfo | null {
   }
 }
 
+function notifyUserInfoChange() {
+  window.dispatchEvent(new Event(AUTH_USER_CHANGE_EVENT));
+}
+
 export const AgentAppsAuth = {
   getUserInfo(): UserInfo | null {
     return getStored();
@@ -93,7 +98,8 @@ export const AgentAppsAuth = {
   },
 
   clearUserInfo() {
-    localStorage.removeItem(STORAGE_KEY);
+    localStorage.clear();
+    notifyUserInfoChange();
   },
 
   getAuthHeaders(): Record<string, string> {
@@ -134,6 +140,7 @@ export const AgentAppsAuth = {
       userId: resolveUserId(info),
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+    notifyUserInfoChange();
   },
 
   updateUserInfo(patch: Partial<UserInfo>) {

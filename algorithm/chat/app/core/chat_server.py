@@ -1,25 +1,35 @@
 from __future__ import annotations
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
 from fastapi import FastAPI
 from lazyllm import LOG, once_wrapper
 
-from chat.config import URL_MAP, SENSITIVE_WORDS_PATH, DEFAULT_CHAT_DATASET
+import chat.components.tmp  # noqa: F401 — registers BgeM3Embed / Qwen3Rerank into lazyllm.online
+from chat.config import SENSITIVE_WORDS_PATH, DEFAULT_CHAT_DATASET, resolve_dataset_url
 from chat.pipelines.agentic import agentic_rag
-from chat.pipelines.naive import get_ppl_naive
 from chat.components.process.sensitive_filter import SensitiveFilter
+from config import config as _cfg
 
 
 def create_app() -> FastAPI:
-    """FastAPI 应用初始化与路由挂载；pipeline 在模块导入时由 ChatServer 注册。"""
+    """Initialize FastAPI app and mount routes; pipelines are registered by ChatServer on module import."""
     app = FastAPI(
         title='LazyLLM Chat API',
-        description='基于知识库的对话 API 服务',
+        description='Knowledge-base-backed conversational API service',
         version='1.0.0',
     )
-    from chat.app.api import chat_routes, health_routes
+    from chat.app.api import (
+        chat_routes,
+        health_routes,
+        memory_generate_routes,
+        model_check_routes,
+        vocab_routes,
+    )
 
     app.include_router(health_routes.router)
     app.include_router(chat_routes.router)
+    app.include_router(memory_generate_routes.router)
+    app.include_router(model_check_routes.router)
+    app.include_router(vocab_routes.router)
     return app
 
 
@@ -45,7 +55,9 @@ class ChatServer:
             else:
                 LOG.warning('[ChatServer] [SENSITIVE_FILTER] Failed to load, filter disabled')
 
-            if DEFAULT_CHAT_DATASET in URL_MAP:
+            if _cfg['skip_startup_pipeline']:
+                self.startup_validated = True
+            elif resolve_dataset_url(DEFAULT_CHAT_DATASET):
                 self.get_query_pipeline(DEFAULT_CHAT_DATASET)
                 self.get_query_pipeline(DEFAULT_CHAT_DATASET, stream=True)
                 self.startup_validated = True
@@ -63,14 +75,25 @@ class ChatServer:
             raise exc
 
     def has_dataset(self, dataset: str) -> bool:
-        return dataset in URL_MAP
+        return resolve_dataset_url(dataset) is not None
+
+    @staticmethod
+    def _build_agentic_pipeline(dataset_url: str, stream: bool) -> Callable[[Dict[str, Any]], Any]:
+        def _pipeline(query_params: Dict[str, Any]) -> Any:
+            params = dict(query_params or {})
+            params['document_url'] = dataset_url
+            params['stream'] = stream
+            return agentic_rag(params)
+
+        return _pipeline
 
     def get_query_pipeline(self, dataset: str, *, stream: bool = False) -> Any:
-        if dataset not in URL_MAP:
+        url = resolve_dataset_url(dataset)
+        if url is None:
             raise KeyError(f'dataset `{dataset}` not found in URL_MAP')
         pipeline_map = self.query_ppl_stream if stream else self.query_ppl
         if dataset not in pipeline_map:
-            pipeline_map[dataset] = get_ppl_naive(url=URL_MAP[dataset], stream=stream)
+            pipeline_map[dataset] = self._build_agentic_pipeline(dataset_url=url, stream=stream)
         return pipeline_map[dataset]
 
 

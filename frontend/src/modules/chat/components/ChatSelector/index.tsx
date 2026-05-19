@@ -1,12 +1,9 @@
-import { Button, Form, Input, Popover, Select, Space, Tag } from "antd";
+import { Button, Input, Popover } from "antd";
 import {
   SearchOutlined,
   CheckOutlined,
   PushpinOutlined,
   PushpinFilled,
-  SettingOutlined,
-  DownOutlined,
-  UpOutlined,
 } from "@ant-design/icons";
 import {
   useEffect,
@@ -17,10 +14,9 @@ import {
   useRef,
 } from "react";
 import {
-  DocumentServiceApi,
   KnowledgeBaseServiceApi,
 } from "@/modules/chat/utils/request";
-import { Dataset, UserInfo } from "@/api/generated/knowledge-client";
+import { Dataset } from "@/api/generated/knowledge-client";
 import KnowledgeIcon from "../../assets/icons/knowledge.svg?react";
 import "./index.scss";
 import { debounce } from "lodash";
@@ -29,6 +25,7 @@ import { useTranslation } from "react-i18next";
 
 export interface ChatSelectorProps {
   chatConfig: ChatConfig;
+  refreshKey?: number | string;
   onChange?: (
     knowledgeIds: string[],
     creators: string[],
@@ -43,8 +40,7 @@ export interface ChatSelectorImperativeProps {
 
 const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
   (props, ref) => {
-    const { chatConfig, onChange } = props;
-    const [form] = Form.useForm();
+    const { chatConfig, refreshKey, onChange } = props;
     const { t } = useTranslation();
 
     const [knowledgeBaseList, setKnowledgeBaseList] = useState<Dataset[]>([]);
@@ -53,14 +49,34 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
     const [open, setOpen] = useState(false);
     const [knowledgeLoading, setKnowledgeLoading] = useState(false);
     const [defaultKnowledgeId, setDefaultKnowledgeId] = useState<string[]>([]);
-    const [creators, setCreators] = useState<UserInfo[]>([]);
-    const [tags, setTags] = useState<string[]>([]);
-    const [showConfig, setShowConfig] = useState<boolean>(false);
     const [searchValue, setSearchValue] = useState<string>("");
     const isResettingSelectionRef = useRef(false);
+    const isUpdatingDefaultRef = useRef(false);
+    const selectedIdsRef = useRef<string[]>([]);
+    const previousRefreshKeyRef = useRef(refreshKey);
 
     useEffect(() => {
-      if (isResettingSelectionRef.current) {
+      selectedIdsRef.current = selectedIds;
+    }, [selectedIds]);
+
+    function getDefaultDatasetIds(datasets: Dataset[]) {
+      return (datasets
+        ?.filter((it) => it?.default_dataset)
+        ?.map((k) => k.dataset_id)
+        .filter(Boolean) as string[]) || [];
+    }
+
+    function mergeSelectedIds(...groups: Array<Array<string | undefined>>) {
+      return [
+        ...new Set(groups.flat().filter((id): id is string => Boolean(id))),
+      ];
+    }
+
+    useEffect(() => {
+      if (
+        isResettingSelectionRef.current ||
+        isUpdatingDefaultRef.current
+      ) {
         return;
       }
       const setData = new Set([
@@ -68,11 +84,23 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
         ...(chatConfig?.knowledgeBaseId || []),
       ]);
       setSelectedIds([...setData]);
-      form.setFieldsValue({
-        creators: chatConfig?.creators || [],
-        tags: chatConfig?.tags || [],
-      });
     }, [chatConfig, defaultKnowledgeId]);
+
+    useEffect(() => {
+      const hasDocumentFilters =
+        (chatConfig?.creators?.length ?? 0) > 0 ||
+        (chatConfig?.tags?.length ?? 0) > 0;
+
+      if (!hasDocumentFilters) {
+        return;
+      }
+
+      onChange?.(
+        mergeSelectedIds(defaultKnowledgeId, chatConfig?.knowledgeBaseId ?? []),
+        [],
+        [],
+      );
+    }, [chatConfig, defaultKnowledgeId, onChange]);
 
     useImperativeHandle(ref, () => ({
       open: () => {
@@ -83,25 +111,19 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
 
     useEffect(() => {
       getKnowledgeBaseList();
-      fetchCreators();
-      fetchTags();
     }, []);
 
-    function fetchCreators() {
-      DocumentServiceApi()
-        .documentServiceAllDocumentCreators()
-        .then((res) => {
-          setCreators(res.data.creators || []);
-        });
-    }
+    useEffect(() => {
+      if (
+        refreshKey === undefined ||
+        previousRefreshKeyRef.current === refreshKey
+      ) {
+        return;
+      }
 
-    function fetchTags() {
-      DocumentServiceApi()
-        .documentServiceAllDocumentTags()
-        .then((res) => {
-          setTags(res.data.tags || []);
-        });
-    }
+      previousRefreshKeyRef.current = refreshKey;
+      getKnowledgeBaseList();
+    }, [refreshKey]);
 
     function getKnowledgeBaseList() {
       setKnowledgeLoading(true);
@@ -111,13 +133,12 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
           const datasets = res.data.datasets || [];
           setKnowledgeBaseList(datasets);
           setFilteredList(datasets);
-          const defaultIds = datasets
-            ?.filter((it) => it?.default_dataset)
-            ?.map((k) => k.dataset_id) as string[];
+          const defaultIds = getDefaultDatasetIds(datasets);
           setDefaultKnowledgeId(defaultIds);
-          const mergedIds = [
-            ...new Set([...defaultIds, ...(chatConfig?.knowledgeBaseId ?? [])]),
-          ];
+          const mergedIds = mergeSelectedIds(
+            defaultIds,
+            chatConfig?.knowledgeBaseId ?? [],
+          );
           setSelectedIds(mergedIds);
           if (
             defaultIds.length > 0 &&
@@ -126,12 +147,43 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
           ) {
             onChange?.(
               mergedIds,
-              chatConfig?.creators || [],
-              chatConfig?.tags || [],
+              [],
+              [],
             );
           }
         })
         .finally(() => setKnowledgeLoading(false));
+    }
+
+    function refreshKnowledgeBaseListPreservingSelection() {
+      isUpdatingDefaultRef.current = true;
+      setKnowledgeLoading(true);
+      KnowledgeBaseServiceApi()
+        .datasetServiceListDatasets({ pageSize: 1000 })
+        .then((res) => {
+          const datasets = res.data.datasets || [];
+          setKnowledgeBaseList(datasets);
+          setFilteredList(datasets);
+          const defaultIds = getDefaultDatasetIds(datasets);
+          setDefaultKnowledgeId(defaultIds);
+
+          const mergedIds = mergeSelectedIds(
+            defaultIds,
+            selectedIdsRef.current,
+          );
+          setSelectedIds(mergedIds);
+          onChange?.(
+            mergedIds,
+            [],
+            [],
+          );
+        })
+        .finally(() => {
+          setKnowledgeLoading(false);
+          window.setTimeout(() => {
+            isUpdatingDefaultRef.current = false;
+          }, 0);
+        });
     }
 
     const filterKnowledgeBaseListFn = debounce((search: string) => {
@@ -140,6 +192,9 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
 
     const sortedAndFilteredList = useMemo(() => {
       let list = [...knowledgeBaseList];
+      const originalIndexMap = new Map(
+        knowledgeBaseList.map((item, index) => [item.dataset_id || `idx-${index}`, index]),
+      );
 
       if (searchValue.trim()) {
         list = list.filter((item) =>
@@ -148,8 +203,19 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
       }
 
       list.sort((a, b) => {
+        const aDefault = !!a.default_dataset;
+        const bDefault = !!b.default_dataset;
         const aSelected = selectedIds.includes(a.dataset_id || "");
         const bSelected = selectedIds.includes(b.dataset_id || "");
+        const aIndex = originalIndexMap.get(a.dataset_id || "") ?? 0;
+        const bIndex = originalIndexMap.get(b.dataset_id || "") ?? 0;
+
+        if (aDefault && !bDefault) {
+          return -1;
+        }
+        if (!aDefault && bDefault) {
+          return 1;
+        }
 
         if (aSelected && !bSelected) {
           return -1;
@@ -158,7 +224,7 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
           return 1;
         }
 
-        return 0;
+        return aIndex - bIndex;
       });
 
       return list;
@@ -168,8 +234,26 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
       setFilteredList(sortedAndFilteredList);
     }, [sortedAndFilteredList]);
 
-    function handleItemClick(datasetId?: string) {
+    function handleItemClick(item: Dataset) {
+      const datasetId = item.dataset_id;
       if (!datasetId) {
+        return;
+      }
+
+      // Default knowledge bases should stay selected until the pin is removed.
+      if (item.default_dataset) {
+        const mergedIds = mergeSelectedIds(
+          defaultKnowledgeId,
+          selectedIdsRef.current,
+        );
+        if (mergedIds.length !== selectedIdsRef.current.length) {
+          setSelectedIds(mergedIds);
+          onChange?.(
+            mergedIds,
+            [],
+            [],
+          );
+        }
         return;
       }
 
@@ -180,8 +264,8 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
       setSelectedIds(newSelectedIds);
       onChange?.(
         newSelectedIds,
-        form.getFieldValue("creators"),
-        form.getFieldValue("tags"),
+        [],
+        [],
       );
     }
 
@@ -192,7 +276,7 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
           unsetDefaultDatasetRequest: { name: item?.name ?? "" },
         })
         .then(() => {
-          getKnowledgeBaseList();
+          refreshKnowledgeBaseListPreservingSelection();
         });
     }
 
@@ -203,7 +287,7 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
           setDefaultDatasetRequest: { name: item?.name ?? "" },
         })
         .then(() => {
-          getKnowledgeBaseList();
+          refreshKnowledgeBaseListPreservingSelection();
         });
     }
 
@@ -251,6 +335,7 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
             />
             <Button
               type="link"
+              className="chat-selector-action-button"
               disabled={knowledgeLoading}
               onClick={() => {
                 // setSearchValue('');
@@ -275,8 +360,8 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
                     setSelectedIds(defaultIds);
                     onChange?.(
                       defaultIds,
-                      form.getFieldValue("creators") || [],
-                      form.getFieldValue("tags") || [],
+                      [],
+                      [],
                     );
                   })
                   .finally(() => {
@@ -284,13 +369,13 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
                     setKnowledgeLoading(false);
                   });
               }}
-              style={{ padding: 0, marginLeft: 16 }}
             >
               {t("chat.reset")}
             </Button>
             {selectedIds.length !== knowledgeBaseList.length ? (
               <Button
                 type="link"
+                className="chat-selector-action-button"
                 disabled={knowledgeLoading}
                 onClick={() => {
                   const allIds = knowledgeBaseList.map(
@@ -299,24 +384,23 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
                   setSelectedIds(allIds);
                   onChange?.(
                     allIds,
-                    form.getFieldValue("creators"),
-                    form.getFieldValue("tags"),
+                    [],
+                    [],
                   );
                 }}
-                style={{ padding: 0, marginLeft: 16 }}
               >
                 {t("chat.selectAll")}
               </Button>
             ) : (
               <Button
                 type="link"
-                style={{ padding: 0, marginLeft: 16 }}
+                className="chat-selector-action-button"
                 onClick={() => {
                   setSelectedIds(defaultKnowledgeId);
                   onChange?.(
                     defaultKnowledgeId,
-                    form.getFieldValue("creators"),
-                    form.getFieldValue("tags"),
+                    [],
+                    [],
                   );
                 }}
               >
@@ -332,7 +416,7 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
                 <div
                   key={item.dataset_id}
                   className={`chat-selector-list-item ${isDefault || isSelected ? "selected" : ""}`}
-                  onClick={() => handleItemClick(item.dataset_id)}
+                  onClick={() => handleItemClick(item)}
                 >
                   <span className="chat-selector-item-label">
                     {item.display_name}
@@ -350,97 +434,27 @@ const ChatSelector = forwardRef<ChatSelectorImperativeProps, ChatSelectorProps>(
               <div className="chat-selector-empty-text">{t("chat.noData")}</div>
             ) : null}
           </div>
-          {renderConfigBottom()}
-        </div>
-      );
-    }
-
-    function renderConfigBottom() {
-      return (
-        <div className="chat-selectot-config">
-          <div className="chat-select-config-header">
-            <Space size={16}>
-              <SettingOutlined />
-              <span>{t("chat.docSettings")}</span>
-              {showConfig && <Tag color="warning">{t("chat.enabled")}</Tag>}
-            </Space>
-            {showConfig ? (
-              <UpOutlined onClick={() => setShowConfig(false)} />
-            ) : (
-              <DownOutlined onClick={() => setShowConfig(true)} />
-            )}
-          </div>
-          {showConfig && (
-            <>
-              <Form.Item name="creators" style={{ marginBottom: 10 }}>
-                <Select
-                  mode="multiple"
-                  tokenSeparators={[" "]}
-                  onChange={(val) =>
-                    onChange?.(selectedIds, val, form.getFieldValue("tags"))
-                  }
-                  allowClear
-                  placeholder={t("chat.selectCreator")}
-                  maxTagCount="responsive"
-                  popupMatchSelectWidth
-                  showSearch
-                  filterOption={false}
-                  options={creators.map((creator) => ({
-                    value: creator.id,
-                    label: creator.name,
-                  }))}
-                />
-              </Form.Item>
-              <Form.Item name="tags" style={{ marginBottom: 10 }}>
-                <Select
-                  mode="multiple"
-                  tokenSeparators={[" "]}
-                  onChange={(val) =>
-                    onChange?.(selectedIds, form.getFieldValue("creators"), val)
-                  }
-                  allowClear
-                  placeholder={t("chat.selectTag")}
-                  maxTagCount="responsive"
-                  popupMatchSelectWidth
-                  showSearch
-                  optionLabelProp="value"
-                  filterOption={false}
-                  options={tags.map((tag) => ({ value: tag, label: tag }))}
-                />
-              </Form.Item>
-              <Button
-                htmlType="button"
-                type="link"
-                onClick={() => form.resetFields()}
-                style={{ padding: 0, marginBottom: 10 }}
-              >
-                {t("chat.reset")}
-              </Button>
-            </>
-          )}
         </div>
       );
     }
 
     return (
-      <Form form={form} component={false}>
-        <div className="chat-selector-wrapper">
-          <Popover
-            content={renderContent()}
-            classNames={{ root: "knowledgePopover" }}
-            trigger="click"
-            open={open}
-            onOpenChange={(bool) => setOpen(bool)}
+      <div className="chat-selector-wrapper">
+        <Popover
+          content={renderContent()}
+          classNames={{ root: "knowledgePopover" }}
+          trigger="click"
+          open={open}
+          onOpenChange={(bool) => setOpen(bool)}
+        >
+          <div
+            className={`input-bottom-actions-left-item ${open || selectedIds.length > 0 ? "selected" : ""}`}
           >
-            <div
-              className={`input-bottom-actions-left-item ${open || selectedIds.length > 0 ? "selected" : ""}`}
-            >
-              <KnowledgeIcon />
-              {t("chat.knowledgeBase")}
-            </div>
-          </Popover>
-        </div>
-      </Form>
+            <KnowledgeIcon />
+            {t("chat.knowledgeBase")}
+          </div>
+        </Popover>
+      </div>
     );
   },
 );

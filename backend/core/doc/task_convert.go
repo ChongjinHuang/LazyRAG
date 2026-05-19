@@ -10,11 +10,11 @@ import (
 	"strings"
 	"time"
 
-	"lazyrag/core/common/orm"
-	"lazyrag/core/store"
+	"lazymind/core/common/orm"
+	"lazymind/core/store"
 
-	"lazyrag/core/common"
-	"lazyrag/core/log"
+	"lazymind/core/common"
+	"lazymind/core/log"
 )
 
 // Office text PDF：text（text documents.ext）
@@ -31,7 +31,7 @@ const convertProviderHTTP = "http"
 const officeConvertRetryCount = 2
 const defaultOfficeConvertWorkers = 4
 
-// env: LAZYRAG_OFFICE_CONVERT_URL — text URL，POST JSON {"source_path":"..."}，text {"pdf_path":"..."} text {"data":{"pdf_path":"..."}}
+// env: LAZYMIND_OFFICE_CONVERT_URL — text URL，POST JSON {"source_path":"..."}，text {"pdf_path":"..."} text {"data":{"pdf_path":"..."}}
 // Office text tasks:start text；Failedtext，text。
 
 func newDocumentExt(storedPath, storedName, originalFilename string, fileSize int64, contentType, relativePath string, tags []string) documentExt {
@@ -106,12 +106,12 @@ func isOfficeDocument(storedPath, contentType, originalFilename string) bool {
 	return false
 }
 
-// expectedParseOutputPath text：stem.__parsed__.pdf
+// expectedParseOutputPath text：stem.pdf
 func expectedParseOutputPath(sourcePath string) string {
 	dir := filepath.Dir(sourcePath)
 	base := filepath.Base(sourcePath)
 	stem := strings.TrimSuffix(base, filepath.Ext(base))
-	return filepath.Join(dir, stem+".__parsed__.pdf")
+	return filepath.Join(dir, stem+".pdf")
 }
 
 func expectedParseOutputPathByStoredName(sourcePath, storedName string) string {
@@ -127,7 +127,7 @@ func officeConvertTimeout() time.Duration {
 }
 
 func officeConvertWorkers() int {
-	raw := strings.TrimSpace(os.Getenv("LAZYRAG_OFFICE_CONVERT_WORKERS"))
+	raw := strings.TrimSpace(os.Getenv("LAZYMIND_OFFICE_CONVERT_WORKERS"))
 	if raw == "" {
 		return defaultOfficeConvertWorkers
 	}
@@ -169,10 +169,10 @@ func applyOfficeConversion(ctx context.Context, d *documentExt) {
 		return
 	}
 
-	url := strings.TrimSpace(os.Getenv("LAZYRAG_OFFICE_CONVERT_URL"))
+	url := strings.TrimSpace(os.Getenv("LAZYMIND_OFFICE_CONVERT_URL"))
 	if url == "" {
 		d.ConvertStatus = ConvertStatusFailed
-		d.ConvertError = "LAZYRAG_OFFICE_CONVERT_URL is not configured"
+		d.ConvertError = "LAZYMIND_OFFICE_CONVERT_URL is not configured"
 		log.Logger.Warn().Str("source", src).Msg("office convert: service URL missing")
 		return
 	}

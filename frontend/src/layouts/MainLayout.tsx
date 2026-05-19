@@ -1,18 +1,30 @@
-import { useEffect, useState } from "react";
-import { Button, Form, Input, Layout, Menu, Modal, Popover, message } from "antd";
-import type { MenuProps } from "antd";
+import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
+import { Button, Form, Input, Layout, Modal, Popover, message } from "antd";
 import {
+  CodeOutlined,
+  CloseOutlined,
   SettingOutlined,
-  UserOutlined,
-  MessageFilled,
+  SearchOutlined,
   AppstoreOutlined,
+  DatabaseOutlined,
+  ApiOutlined,
+  UserOutlined,
   TeamOutlined,
+  GlobalOutlined,
+  MenuFoldOutlined,
+  MenuUnfoldOutlined,
+  PlusOutlined,
+  RightOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { Navigate, Outlet, useLocation, useNavigate } from "react-router-dom";
 import type { UserDetailResponse } from "@/api/generated/auth-client";
-import { AgentAppsAuth } from "@/components/auth";
+import type { Conversation } from "@/api/generated/chatbot-client";
+import { AUTH_USER_CHANGE_EVENT, AgentAppsAuth } from "@/components/auth";
 import {
   changeCurrentUserPassword,
+  fetchCurrentUser,
   fetchCurrentUserDetail,
   updateCurrentUserProfile,
 } from "@/modules/signin/utils/request";
@@ -20,11 +32,39 @@ import { validatePassword } from "@/modules/signin/utils/formRules";
 import logoImage from "@/public/Lazy.png";
 import { useTranslation } from "react-i18next";
 import LanguageSwitcher from "@/components/LanguageSwitcher";
+import {
+  isDeveloperModeActive,
+  setDeveloperModeActive,
+} from "@/utils/developerMode";
+import RecordList from "@/modules/chat/components/RecordList";
+import {
+  CHAT_RESUME_CONVERSATION_KEY,
+  CHAT_SELECT_CONVERSATION_EVENT,
+} from "@/modules/chat/constants/chat";
 import "./index.scss";
 
 const { Content, Sider } = Layout;
+const MAINLAND_CHINA_PHONE_REGEX = /^1[3-9]\d{9}$/;
+const MAIN_MENU_COLLAPSED_STORAGE_KEY = "lazymind:main-menu-collapsed";
+const MAIN_MENU_TRANSITION_MS = 240;
 
-type MenuItem = Required<MenuProps>["items"][number];
+function readStoredMainMenuCollapsed() {
+  try {
+    return localStorage.getItem(MAIN_MENU_COLLAPSED_STORAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function isAdminRole(role?: string) {
+  const normalizedRole = (role || "").trim().toLowerCase();
+  return (
+    normalizedRole === "admin" ||
+    normalizedRole === "system-admin" ||
+    normalizedRole === "system_admin" ||
+    normalizedRole.endsWith(".admin")
+  );
+}
 
 interface ProfileFormValues {
   username: string;
@@ -49,42 +89,32 @@ export default function MainLayout() {
   const { t } = useTranslation();
   const [profileForm] = Form.useForm<ProfileFormValues>();
 
-  const allMenuItems: MenuItem[] = [
-    {
-      key: "agent",
-      label: t("layout.agent"),
-      type: "group",
-      children: [
-        { key: "/agent/chat", label: t("layout.knowledgeQA"), icon: <MessageFilled /> },
-      ],
-    },
-    {
-      key: "lib",
-      label: t("layout.resourceLib"),
-      type: "group",
-      children: [
-        { key: "/lib/knowledge", label: t("layout.knowledgeBase"), icon: <AppstoreOutlined /> },
-      ],
-    },
-  ];
-  const pathname = location.pathname || "/agent/chat";
-
-  const userInfo = AgentAppsAuth.getUserInfo();
+  const [userInfo, setUserInfo] = useState(() => AgentAppsAuth.getUserInfo());
   const isLoggedIn = Boolean(userInfo?.token);
   const userName = userInfo?.username || "";
+  const isAdminUser = isAdminRole(userInfo?.role);
 
-  const [selectKeys, setSelectKeys] = useState<string[]>([
-    pathname.startsWith("/lib") ? "/lib/knowledge" : "/agent/chat",
-  ]);
-
+  const [currentSidebarConversationId, setCurrentSidebarConversationId] =
+    useState(() => {
+      try {
+        return sessionStorage.getItem(CHAT_RESUME_CONVERSATION_KEY) || "";
+      } catch {
+        return "";
+      }
+    });
   const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSubmitting, setProfileSubmitting] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [profileDetail, setProfileDetail] = useState<UserDetailResponse | null>(
-    null,
+  const [historySearchOpen, setHistorySearchOpen] = useState(false);
+  const [isMenuCollapsed, setIsMenuCollapsed] = useState(readStoredMainMenuCollapsed);
+  const [shouldRenderMenuContent, setShouldRenderMenuContent] = useState(
+    () => !readStoredMainMenuCollapsed(),
   );
-  const menuItems = allMenuItems;
+  const [developerActive, setDeveloperActive] = useState(isDeveloperModeActive);
+  const [profileDetail, setProfileDetail] = useState<UserDetailResponse | null>(null);
+
+  const pathname = location.pathname || "/agent/chat";
 
   const settingsMenuItems = [
     {
@@ -92,33 +122,276 @@ export default function MainLayout() {
       label: t("layout.systemManagement"),
       icon: <TeamOutlined className="settings-popover-icon" />,
     },
+    ...(isAdminUser
+      ? [
+          {
+            key: "developer-toggle",
+            label: t("layout.developer"),
+            icon: <CodeOutlined className="settings-popover-icon" />,
+          },
+        ]
+      : []),
+  ];
+  const resourceNavItems = [
+    {
+      key: "/lib/knowledge",
+      label: t("layout.knowledgeBase"),
+      icon: <AppstoreOutlined />,
+    },
+    {
+      key: "/data-sources",
+      label: t("layout.dataSourceManagement"),
+      icon: <DatabaseOutlined />,
+    },
+    {
+      key: "/model-providers",
+      label: t("layout.modelProviderManagement"),
+      icon: <ApiOutlined />,
+    },
+  ];
+  const aiEvolutionNavItems = [
+    {
+      key: "/memory-management",
+      label: t("layout.memoryManagement"),
+      icon: <AppstoreOutlined />,
+    },
+    ...(isAdminUser && developerActive
+      ? [
+          {
+            key: "/self-evolution",
+            label: t("layout.selfEvolution"),
+            icon: <CodeOutlined />,
+          },
+        ]
+      : []),
   ];
   const logoSrc =
     (import.meta.env as ImportMetaEnv & { VITE_APP_LOGO?: string })
       .VITE_APP_LOGO || "";
+  const needsRestoreButtonSafeArea =
+    pathname.startsWith("/model-providers") ||
+    pathname.startsWith("/memory-management") ||
+    pathname.startsWith("/self-evolution");
+  const contentClassName = [
+    "main-layout-content",
+    isMenuCollapsed ? "is-sidebar-collapsed" : "",
+    isMenuCollapsed && needsRestoreButtonSafeArea ? "is-restore-safe-area-page" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
-    let key = "/agent/chat";
-    if (pathname.startsWith("/lib")) {
-      key = "/lib/knowledge";
+    setDeveloperActive(isDeveloperModeActive());
+  }, []);
+
+  const refreshLayoutUser = useCallback(async () => {
+    if (!AgentAppsAuth.isLoggedIn()) {
+      setUserInfo(AgentAppsAuth.getUserInfo());
+      return;
     }
-    setSelectKeys([key]);
+
+    try {
+      await fetchCurrentUser();
+    } catch (error) {
+      console.error("Failed to refresh current user:", error);
+    } finally {
+      setUserInfo(AgentAppsAuth.getUserInfo());
+    }
+  }, []);
+
+  useEffect(() => {
+    refreshLayoutUser();
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshLayoutUser();
+      }
+    };
+    const handleFocus = () => {
+      refreshLayoutUser();
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "lazymind:user") {
+        setUserInfo(AgentAppsAuth.getUserInfo());
+      }
+    };
+    const handleUserChange = () => {
+      setUserInfo(AgentAppsAuth.getUserInfo());
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    window.addEventListener("focus", handleFocus);
+    window.addEventListener("storage", handleStorage);
+    window.addEventListener(AUTH_USER_CHANGE_EVENT, handleUserChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("focus", handleFocus);
+      window.removeEventListener("storage", handleStorage);
+      window.removeEventListener(AUTH_USER_CHANGE_EVENT, handleUserChange);
+    };
+  }, [refreshLayoutUser]);
+
+  useEffect(() => {
+    if (!isAdminUser && developerActive) {
+      setDeveloperActive(false);
+      setDeveloperModeActive(false);
+    }
+  }, [developerActive, isAdminUser]);
+
+  useEffect(() => {
+    if (pathname.startsWith("/self-evolution") && (!isAdminUser || !developerActive)) {
+      navigate("/agent/chat", { replace: true });
+    }
+  }, [pathname, isAdminUser, developerActive, navigate]);
+
+  useEffect(() => {
+    if (!pathname.startsWith("/agent/chat")) {
+      setCurrentSidebarConversationId("");
+    }
   }, [pathname]);
 
   useEffect(() => {
-    if (pathname.startsWith("/admin") && !isLoggedIn) {
-      navigate("/login", { replace: true });
+    if (!isMenuCollapsed) {
+      setShouldRenderMenuContent(true);
+      return;
     }
-  }, [isLoggedIn, navigate, pathname]);
 
-  const onMenuClick: MenuProps["onClick"] = (e) => {
-    const targetPath = e.key as string;
-    if (selectKeys.includes(targetPath)) return;
-    setSelectKeys([targetPath]);
+    const timer = window.setTimeout(() => {
+      setShouldRenderMenuContent(false);
+    }, MAIN_MENU_TRANSITION_MS);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isMenuCollapsed]);
+
+  useEffect(() => {
+    setIsMenuCollapsed(readStoredMainMenuCollapsed());
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(MAIN_MENU_COLLAPSED_STORAGE_KEY, isMenuCollapsed ? "1" : "0");
+    } catch {
+      // ignore persistence errors
+    }
+  }, [isMenuCollapsed]);
+
+  useEffect(() => {
+    const handleConversationSelect = (event: Event) => {
+      const conversationId =
+        (event as CustomEvent<{ conversationId?: string }>).detail
+          ?.conversationId || "";
+      setCurrentSidebarConversationId(conversationId);
+    };
+
+    window.addEventListener(
+      CHAT_SELECT_CONVERSATION_EVENT,
+      handleConversationSelect,
+    );
+    return () => {
+      window.removeEventListener(
+        CHAT_SELECT_CONVERSATION_EVENT,
+        handleConversationSelect,
+      );
+    };
+  }, []);
+
+  const toggleMenu = () => {
+    setIsMenuCollapsed((prev) => !prev);
+  };
+
+  const emitConversationSelection = (conversationId: string) => {
+    window.dispatchEvent(
+      new CustomEvent(CHAT_SELECT_CONVERSATION_EVENT, {
+        detail: { conversationId, source: "sidebar" },
+      }),
+    );
+  };
+
+  const handleNewChat = () => {
+    try {
+      sessionStorage.removeItem(CHAT_RESUME_CONVERSATION_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    setCurrentSidebarConversationId("");
+    emitConversationSelection("");
+    navigate("/agent/chat/home");
+  };
+
+  const handleSidebarConversationSelected = (conversation: Conversation) => {
+    const conversationId = conversation.conversation_id || "";
+    if (!conversationId) {
+      return;
+    }
+    try {
+      sessionStorage.setItem(CHAT_RESUME_CONVERSATION_KEY, conversationId);
+    } catch {
+      // ignore storage errors
+    }
+    setCurrentSidebarConversationId(conversationId);
+    emitConversationSelection(conversationId);
+    setHistorySearchOpen(false);
+    navigate("/agent/chat/home");
+  };
+
+  const handleSidebarConversationRemoved = (conversation: Conversation) => {
+    const conversationId = conversation.conversation_id || "";
+    if (!conversationId || conversationId !== currentSidebarConversationId) {
+      return;
+    }
+    try {
+      sessionStorage.removeItem(CHAT_RESUME_CONVERSATION_KEY);
+    } catch {
+      // ignore storage errors
+    }
+    setCurrentSidebarConversationId("");
+    emitConversationSelection("");
+  };
+
+  const handleModuleNavigate = (targetPath: string) => {
+    setCurrentSidebarConversationId("");
     navigate(targetPath);
   };
 
+  const renderModulePopover = (
+    items: Array<{ key: string; label: string; icon: ReactNode }>,
+  ) => (
+    <div className="sider-module-popover">
+      {items.map((item) => (
+        <Button
+          key={item.key}
+          type="text"
+          className="sider-module-popover-item"
+          icon={item.icon}
+          onClick={() => handleModuleNavigate(item.key)}
+        >
+          {item.label}
+        </Button>
+      ))}
+    </div>
+  );
+
   const handleSettingsNavigate = (targetPath: string) => {
+    if (targetPath === "developer-toggle") {
+      if (developerActive) {
+        setDeveloperActive(false);
+        setDeveloperModeActive(false);
+        message.success(t("admin.developerDeactivated"));
+        if (pathname.startsWith("/self-evolution")) {
+          navigate("/agent/chat");
+        }
+        return;
+      }
+
+      setDeveloperActive(true);
+      setDeveloperModeActive(true);
+      message.success(t("admin.developerActivated"));
+      return;
+    }
+
     setSettingsOpen(false);
     navigate(targetPath);
   };
@@ -179,6 +452,33 @@ export default function MainLayout() {
     },
   });
 
+  const phoneRule = {
+    validator(_: any, value?: string) {
+      const phone = normalizeFieldValue(value);
+      if (!phone || MAINLAND_CHINA_PHONE_REGEX.test(phone)) {
+        return Promise.resolve();
+      }
+      return Promise.reject(new Error(t("profile.invalidPhone")));
+    },
+  };
+
+  const clearPasswordFields = () => {
+    profileForm.setFieldsValue({
+      currentPassword: "",
+      newPassword: "",
+      confirmPassword: "",
+    });
+  };
+
+  const schedulePasswordFieldClear = () => {
+    window.setTimeout(() => {
+      clearPasswordFields();
+    }, 0);
+    window.setTimeout(() => {
+      clearPasswordFields();
+    }, 300);
+  };
+
   const applyProfileToForm = (detail: UserDetailResponse) => {
     profileForm.setFieldsValue({
       username: detail.username,
@@ -188,14 +488,13 @@ export default function MainLayout() {
       remark: (detail as any).remark || "",
       roleName: detail.role_name || "",
       status: detail.status || "",
-      currentPassword: "",
-      newPassword: "",
-      confirmPassword: "",
     });
+    clearPasswordFields();
   };
 
   const refreshCurrentProfile = async () => {
     const detail = await fetchCurrentUserDetail();
+    setUserInfo(AgentAppsAuth.getUserInfo());
     setProfileDetail(detail);
     applyProfileToForm(detail);
     return detail;
@@ -293,30 +592,114 @@ export default function MainLayout() {
 
   return (
     <Layout hasSider className="main-layout">
-      <Sider width={200} className="sider-bar-style">
+      <Sider
+        width={252}
+        collapsedWidth={0}
+        collapsible
+        trigger={null}
+        collapsed={isMenuCollapsed}
+        className={`sider-bar-style${isMenuCollapsed ? " is-collapsed" : ""}`}
+      >
         <div className="sider-inner">
-          <div className="img-box">
-            {logoSrc ? (
-              <img src={logoSrc} alt="logo" />
-            ) : (
-              <img
-                src={logoImage}
-                alt="logo"
-                style={{ width: 40, height: "auto" }}
-              />
-            )}
+          <div className="sider-brand-row">
+            <button
+              type="button"
+              className="sider-brand"
+              onClick={handleNewChat}
+              aria-label="LazyMind"
+              title="LazyMind"
+            >
+              {logoSrc ? (
+                <img src={logoSrc} alt="logo" />
+              ) : (
+                <img src={logoImage} alt="logo" />
+              )}
+            </button>
+            <Button
+              type="text"
+              className="sider-search-button"
+              icon={<SearchOutlined />}
+              onClick={() => setHistorySearchOpen(true)}
+              aria-label={t("chat.searchConversation")}
+              title={t("chat.searchConversation")}
+            />
+            <button
+              type="button"
+              className="sider-inline-toggle"
+              onClick={toggleMenu}
+              aria-label={isMenuCollapsed ? "展开菜单" : "收起菜单"}
+              title={isMenuCollapsed ? "展开菜单" : "收起菜单"}
+            >
+              {isMenuCollapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
+            </button>
           </div>
-          <Menu
-            onClick={onMenuClick}
-            selectedKeys={selectKeys}
-            items={menuItems}
-            mode="inline"
-            className="sider-menu"
-            style={{ border: "none" }}
-          />
+          {shouldRenderMenuContent ? (
+            <>
+              <div className="sider-primary-action">
+                <Button
+                  type="text"
+                  className="sider-new-chat-button"
+                  icon={<PlusOutlined />}
+                  onClick={handleNewChat}
+                >
+                  {t("layout.newChat")}
+                </Button>
+              </div>
+              <div className="sider-module-actions">
+                <Popover
+                  content={renderModulePopover(resourceNavItems)}
+                  arrow={false}
+                  placement="rightTop"
+                  trigger="hover"
+                  mouseLeaveDelay={0.25}
+                  align={{ offset: [-4, 0] }}
+                  overlayClassName="sider-module-overlay"
+                >
+                  <button type="button" className="sider-module-trigger">
+                    <span className="sider-module-icon">
+                      <FolderOpenOutlined />
+                    </span>
+                    <span className="sider-module-text">{t("layout.resourceLib")}</span>
+                    <RightOutlined className="sider-module-arrow" />
+                  </button>
+                </Popover>
+                <Popover
+                  content={renderModulePopover(aiEvolutionNavItems)}
+                  arrow={false}
+                  placement="rightTop"
+                  trigger="hover"
+                  mouseLeaveDelay={0.25}
+                  align={{ offset: [-4, 0] }}
+                  overlayClassName="sider-module-overlay"
+                >
+                  <button type="button" className="sider-module-trigger">
+                    <span className="sider-module-icon">
+                      <CodeOutlined />
+                    </span>
+                    <span className="sider-module-text">{t("layout.aiEvolution")}</span>
+                    <RightOutlined className="sider-module-arrow" />
+                  </button>
+                </Popover>
+              </div>
+            </>
+          ) : null}
+          {shouldRenderMenuContent && (
+            <div className="sider-history">
+              <RecordList
+                compact
+                hideSearch
+                showBatchActions
+                title={t("chat.recentConversations")}
+                currentSessionId={currentSidebarConversationId}
+                onSelected={handleSidebarConversationSelected}
+                onRemove={handleSidebarConversationRemoved}
+              />
+            </div>
+          )}
           <div className="sider-bar-bottom">
-            <div className="bottom-item">
-              <LanguageSwitcher />
+            <div className="bottom-item language-item">
+              <GlobalOutlined className="bottom-icon" />
+              {shouldRenderMenuContent && <LanguageSwitcher />}
             </div>
             <Popover
               content={
@@ -325,11 +708,16 @@ export default function MainLayout() {
                     <Button
                       key={item.key}
                       type="text"
-                      className="settings-popover-button"
+                      className={`settings-popover-button${
+                        item.key === "developer-toggle" && developerActive ? " is-active" : ""
+                      }`}
                       onClick={() => handleSettingsNavigate(item.key)}
                     >
                       {item.icon}
                       <span>{item.label}</span>
+                      {item.key === "developer-toggle" && developerActive && (
+                        <span className="settings-active-badge">{t("admin.developerActiveTag")}</span>
+                      )}
                     </Button>
                   ))}
                   {isLoggedIn ? (
@@ -369,7 +757,7 @@ export default function MainLayout() {
                 }}
               >
                 <SettingOutlined className="bottom-icon" />
-                <span className="bottom-text">{t("layout.settings")}</span>
+                {shouldRenderMenuContent && <span className="bottom-text">{t("layout.settings")}</span>}
               </div>
             </Popover>
             {userName && (
@@ -386,19 +774,56 @@ export default function MainLayout() {
                 }}
               >
                 <UserOutlined className="bottom-icon" />
-                <span className="bottom-text">{userName}</span>
+                {shouldRenderMenuContent && <span className="bottom-text">{userName}</span>}
               </div>
             )}
           </div>
         </div>
       </Sider>
-      <Layout className="main-layout-content">
+      <Layout className={contentClassName}>
         <Content className="main-layout-body">
+          {isMenuCollapsed ? (
+            <button
+              type="button"
+              className="main-menu-restore-button"
+              onClick={toggleMenu}
+              aria-label="展开菜单"
+              title="展开菜单"
+            >
+              <MenuUnfoldOutlined />
+            </button>
+          ) : null}
           <div className="sub-app-container">
-            <Outlet />
+            <Outlet
+              context={{
+                isMenuCollapsed,
+                toggleMenu,
+              }}
+            />
           </div>
         </Content>
       </Layout>
+      <Modal
+        open={historySearchOpen}
+        footer={null}
+        closeIcon={<CloseOutlined />}
+        onCancel={() => setHistorySearchOpen(false)}
+        className="history-search-modal"
+        width={640}
+        centered
+        destroyOnHidden
+      >
+        <div className="history-search-tabs">
+          <button type="button" className="history-search-tab active">
+            {t("chat.chatHistory")}
+          </button>
+        </div>
+        <RecordList
+          currentSessionId={currentSidebarConversationId}
+          onSelected={handleSidebarConversationSelected}
+          onRemove={handleSidebarConversationRemoved}
+        />
+      </Modal>
       <Modal
         title={t("profile.title")}
         open={profileModalOpen}
@@ -407,11 +832,17 @@ export default function MainLayout() {
         confirmLoading={profileSubmitting}
         destroyOnHidden
         maskClosable={false}
+        afterOpenChange={(open) => {
+          if (open) {
+            schedulePasswordFieldClear();
+          }
+        }}
       >
         <Form
           form={profileForm}
           layout="vertical"
           disabled={profileLoading || profileSubmitting}
+          autoComplete="off"
         >
           <Form.Item name="username" label={t("profile.username")}>
             <Input disabled autoComplete="username" />
@@ -426,8 +857,17 @@ export default function MainLayout() {
           >
             <Input placeholder={t("profile.pleaseInputEmail")} autoComplete="email" />
           </Form.Item>
-          <Form.Item name="phone" label={t("profile.phone")}>
-            <Input placeholder={t("profile.pleaseInputPhone")} autoComplete="tel" />
+          <Form.Item
+            name="phone"
+            label={t("profile.phone")}
+            rules={[phoneRule]}
+          >
+            <Input
+              placeholder={t("profile.pleaseInputPhone")}
+              autoComplete="tel"
+              inputMode="numeric"
+              maxLength={11}
+            />
           </Form.Item>
           <Form.Item name="remark" label={t("profile.description")}>
             <Input.TextArea placeholder={t("profile.pleaseInputDescription")} />
@@ -445,7 +885,8 @@ export default function MainLayout() {
           >
             <Input.Password
               placeholder={t("profile.pleaseInputCurrentPassword")}
-              autoComplete="current-password"
+              autoComplete="new-password"
+              name="profile-current-password"
             />
           </Form.Item>
           <Form.Item
@@ -457,6 +898,7 @@ export default function MainLayout() {
             <Input.Password
               placeholder={t("profile.pleaseInputNewPassword")}
               autoComplete="new-password"
+              name="profile-new-password"
             />
           </Form.Item>
           <Form.Item
@@ -468,6 +910,7 @@ export default function MainLayout() {
             <Input.Password
               placeholder={t("profile.pleaseInputConfirmPassword")}
               autoComplete="new-password"
+              name="profile-confirm-password"
             />
           </Form.Item>
         </Form>

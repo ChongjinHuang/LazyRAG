@@ -1,4 +1,5 @@
 import { CommonModal } from "@/components/ui";
+import { getLocalizedErrorMessage } from "@/components/request";
 import { Switch, Space, message } from "antd";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -44,16 +45,19 @@ function ConversationSettingModal(props: ConversationSettingModalProps) {
       const savedStatus = response.data.status ?? status;
       setEnableMultipleAnswers(savedStatus === 1);
       if (!newMessage && savedStatus === 0) {
-        message.success(t("chat.keepLazyRagAnswer"));
+        message.success(t("chat.keepLazyMindAnswer"));
       } else {
         message.success(t("chat.settingsSaved"));
       }
       onStatusChange?.();
       cancelFn();
     } catch (error: any) {
-      message.error(
-        error?.response?.data?.message || t("chat.settingSaveFailed"),
-      );
+      if (!error?.response && !error?.request) {
+        message.error(
+          getLocalizedErrorMessage(error, t("chat.settingSaveFailed")) ||
+            t("chat.settingSaveFailed"),
+        );
+      }
     }
   }
 

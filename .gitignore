@@ -7,16 +7,18 @@ backend/core/core
 __pycache__
 
 # python files
-__pycache__
+*__pycache__*
 *.pyc
 
 # temp files
 test/
+node_modules/
 dist/
 tmp/
 build
 *.lock
 *.db
+*.sqlite3
 mkdocs.yml
 .temp
 infer_log/
@@ -29,6 +31,9 @@ wget-log
 .vscode
 .claude
 .cursor
+.codex
+.codex-gocache/
+.codex-gomodcache/
 
 # docs
 lazyllm_chroma/
@@ -78,3 +83,21 @@ lazyllm_cpp.egg-info/
 data/
 volumes/
 .conda
+
+# evo runtime artifacts
+evo/output/
+data/evo/
+
+# macOS
+.DS_Store
+
+AGENTS.md
+algorithm/.agentic_rag/
+version.*
+algorithm/Dockerfile.chat-rebase
+
+# generated openapi
+api/backend/auth-service/openapi.yml
+api/backend/auth-service/swagger.json
+api/backend/core/openapi.yml
+api/backend/core/swagger.json

@@ -1,7 +1,8 @@
 {
-  "name": "lazyrag-frontend",
+  "name": "lazymind-frontend",
   "version": "1.0.0",
   "private": true,
+  "packageManager": "pnpm@10.0.0",
   "type": "module",
   "scripts": {
     "predev": "bash scripts/openapi/generate-auth.sh",

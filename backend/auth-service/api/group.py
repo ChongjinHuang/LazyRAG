@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 
-from core.deps import current_user
+from core.deps import current_user, require_internal_service_token
 from core.errors import ErrorCodes, raise_error
 from core.rbac import permission_required
 from models import User
@@ -39,19 +39,23 @@ def _parse_user_id(user_id: str) -> uuid.UUID:
 
 
 @router.get('', response_model=GroupListResponse)
-@permission_required('user.admin')
+@permission_required('user.read')
 def list_groups(
-    _: User = Depends(current_user),  # noqa: B008
+    user: User = Depends(current_user),  # noqa: B008
     page: int = Query(1, ge=1),  # noqa: B008
     page_size: int = Query(20, ge=1, le=200),  # noqa: B008
     search: str | None = None,
     tenant_id: str | None = None,
+    active_members_only: bool = False,
 ):
     items, total = group_service.list_groups(
         page=page,
         page_size=page_size,
         search=search,
         tenant_id=tenant_id,
+        current_user_id=user.id,
+        is_system_admin=(getattr(user.role, 'name', None) == 'system-admin'),
+        active_members_only=active_members_only,
     )
     return {'groups': items, 'total': total, 'page': page, 'page_size': page_size}
 
@@ -74,7 +78,7 @@ def create_group(body: GroupCreateBody, user: User = Depends(current_user)):  # 
 
 
 @router.get('/{group_id}', response_model=GroupDetailResponse)
-@permission_required('user.admin')
+@permission_required('user.read')
 def get_group(group_id: str, _: User = Depends(current_user)):  # noqa: B008
     gid = _parse_group_id(group_id)
     detail = group_service.get_group(gid)
@@ -110,9 +114,24 @@ def delete_group(group_id: str, _: User = Depends(current_user)):  # noqa: B008
 
 @router.get('/{group_id}/user', response_model=GroupUserListResponse)
 @permission_required('user.admin')
-def list_group_users(group_id: str, _: User = Depends(current_user)):  # noqa: B008
+def list_group_users(
+    group_id: str,
+    _: User = Depends(current_user),  # noqa: B008
+    active_only: bool = False,
+):
     gid = _parse_group_id(group_id)
-    users = group_service.list_group_users(gid)
+    users = group_service.list_group_users(gid, active_only=active_only)
+    return {'users': users}
+
+
+@router.get('/{group_id}/user/internal', response_model=GroupUserListResponse)
+def list_group_users_internal(
+    group_id: str,
+    _internal: None = Depends(require_internal_service_token),  # noqa: B008
+    active_only: bool = False,
+):
+    gid = _parse_group_id(group_id)
+    users = group_service.list_group_users(gid, active_only=active_only)
     return {'users': users}
 
 

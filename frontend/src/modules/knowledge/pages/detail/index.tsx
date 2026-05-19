@@ -42,6 +42,7 @@ import ImportTaskManage, {
   IImportTaskManageRef,
 } from "./components/ImportTaskManage";
 import TreeUtils from "@/modules/knowledge/utils/tree";
+import { IMPORT_TASK_POLL_INTERVAL } from "@/modules/knowledge/constants/common";
 import ConfirmModal, {
   ConfirmImperativeProps,
 } from "@/modules/knowledge/components/ConfirmModal";
@@ -51,6 +52,10 @@ import CreateUpdateModal, {
 import { KnowledgeBaseServiceApi } from "@/modules/knowledge/utils/request";
 import { DocumentServiceApi, TaskServiceApi } from "../../utils/request";
 import { useDatasetPermissionStore } from "@/modules/knowledge/store/dataset_permission";
+import {
+  DEVELOPER_ACTIVE_EVENT,
+  isDeveloperModeActive,
+} from "@/utils/developerMode";
 
 import { DetailPageHeader } from "@/components/ui";
 
@@ -71,6 +76,7 @@ const Detail = () => {
 
   const [detail, setDetail] = useState<Dataset>();
   const [importingTotal, setImportingTotal] = useState(0);
+  const [developerActive, setDeveloperActive] = useState(isDeveloperModeActive);
 
   const { id = "" } = useParams();
 
@@ -100,10 +106,31 @@ const Detail = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [getDetail, clearDataset]);
 
+  useEffect(() => {
+    const syncDeveloperActive = () => {
+      setDeveloperActive(isDeveloperModeActive());
+    };
+
+    const handleDeveloperActiveChange = (event: Event) => {
+      const nextActive = (event as CustomEvent<{ active?: boolean }>).detail?.active;
+      setDeveloperActive(
+        typeof nextActive === "boolean" ? nextActive : isDeveloperModeActive(),
+      );
+    };
+
+    window.addEventListener("storage", syncDeveloperActive);
+    window.addEventListener(DEVELOPER_ACTIVE_EVENT, handleDeveloperActiveChange);
+
+    return () => {
+      window.removeEventListener("storage", syncDeveloperActive);
+      window.removeEventListener(DEVELOPER_ACTIVE_EVENT, handleDeveloperActiveChange);
+    };
+  }, []);
+
   function getImportingTotal() {
     pollingRef.current.cancel();
     pollingRef.current.start({
-      interval: 10 * 1000,
+      interval: IMPORT_TASK_POLL_INTERVAL,
       request: () => TaskServiceApi().listTasks(id),
       onSuccess: ({ data = {} }) => {
         const RUNNING_STATES = ["WAITING", "WORKING"];
@@ -206,7 +233,7 @@ const Detail = () => {
       .then(() => {
         message.success(t("knowledge.deleteSuccess"));
         navigate({
-          pathname: "/list",
+          pathname: "/lib/knowledge/list",
         });
       });
   }
@@ -238,27 +265,29 @@ const Detail = () => {
       <DetailPageHeader
         title={detail?.display_name}
         titleExtra={
-          <>
-            <span
-              style={{
-                marginRight: "4px",
-                color: "var(--color-text-description)",
-              }}
-            >
-              ID: {detail?.dataset_id}
-            </span>
-            <CopyOutlined
-              style={{ color: "var(--color-text-description)" }}
-              onClick={async () => {
-                try {
-                  await navigator.clipboard.writeText(detail?.dataset_id || "");
-                  message.success(t("knowledge.copySuccess"));
-                } catch {
-                  message.error(t("knowledge.copyFailedManual"));
-                }
-              }}
-            />
-          </>
+          developerActive ? (
+            <>
+              <span
+                style={{
+                  marginRight: "4px",
+                  color: "var(--color-text-description)",
+                }}
+              >
+                ID: {detail?.dataset_id}
+              </span>
+              <CopyOutlined
+                style={{ color: "var(--color-text-description)" }}
+                onClick={async () => {
+                  try {
+                    await navigator.clipboard.writeText(detail?.dataset_id || "");
+                    message.success(t("knowledge.copySuccess"));
+                  } catch {
+                    message.error(t("knowledge.copyFailedManual"));
+                  }
+                }}
+              />
+            </>
+          ) : null
         }
         settingsMenu={
           detail?.acl?.includes(DatasetAclEnum.DatasetWrite) && (
@@ -313,9 +342,19 @@ const Detail = () => {
             value:
               detail?.tags && detail?.tags.length > 0
                 ? detail.tags.map((tag) => (
-                    <Tag style={{ marginLeft: "8px" }} key={tag}>
-                      {tag}
-                    </Tag>
+                    <Tooltip key={tag} title={tag}>
+                      <Tag
+                        style={{
+                          marginLeft: "8px",
+                          maxWidth: "240px",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {tag}
+                      </Tag>
+                    </Tooltip>
                   ))
                 : "-",
           },
@@ -325,7 +364,7 @@ const Detail = () => {
             searchParams.get("from") ?? "",
           );
           if (bool) {
-            navigate("/list");
+            navigate("/lib/knowledge/list");
           } else {
             navigate(-1);
           }
@@ -538,8 +577,28 @@ const Detail = () => {
 
       <ImportKnowledgeModal
         ref={importKnowledgeRef}
-        onOk={() => {
+        onOk={({ pId } = {}) => {
+          importingTaskListRef.current = [];
           getImportingTotal();
+          getDetail();
+
+          if (pId) {
+            const parentNode = TreeUtils.findNode(
+              knowledgeListRef.current?.treeData || [],
+              (node: TreeNode) => node.document_id === pId,
+            );
+
+            if (parentNode) {
+              knowledgeListRef.current?.getTableData({
+                pId,
+                level: parentNode.level + 1,
+                parentNode,
+              });
+              return;
+            }
+          }
+
+          knowledgeListRef.current?.getTableData({ pId: "", level: 0 });
         }}
       />
 

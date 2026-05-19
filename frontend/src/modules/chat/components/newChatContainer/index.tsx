@@ -5,7 +5,7 @@ import {
   forwardRef,
   useImperativeHandle,
   useCallback,
-  ReactElement,
+  ReactNode,
 } from "react";
 import { Spin, Flex, message } from "antd";
 import {
@@ -41,6 +41,12 @@ import type { PreferenceType } from "../MultiAnswerDisplay";
 import { ChatServiceApi } from "@/modules/chat/utils/request";
 import { useChatMessageStore } from "@/modules/chat/store/chatMessage";
 import { CHAT_RESUME_CONVERSATION_KEY } from "@/modules/chat/constants/chat";
+import { useTranslation } from "react-i18next";
+import { getRegenerationInputs } from "@/modules/chat/utils/message";
+import {
+  splitThinkingContent,
+  formatThinkingForDisplay,
+} from "@/modules/chat/utils/thinking";
 
 const ThinkIcon = new URL("../../assets/images/think.png", import.meta.url)
   .href;
@@ -55,7 +61,7 @@ export interface ChatImperativeProps {
 
 interface Props {
   canChat?: boolean;
-  initialCard?: ReactElement | string;
+  initialCard?: ReactNode;
   sessionId?: string;
   onOpenSSE: (
     input: any[],
@@ -68,17 +74,20 @@ interface Props {
   ) => any;
   onConversationIdChange?: (conversationId: string) => void;
   parseErrorData: (data: string) => string;
-  setShowHistoryList: (show: boolean) => void;
-  showHistoryList: boolean;
+  setShowHistoryList?: (show: boolean) => void;
+  showHistoryList?: boolean;
+  showHistoryButton?: boolean;
   setIsChatContent: (isChatContent: boolean) => void;
   chatConfig?: ChatConfig;
   setChatConfig?: (chatConfig: ChatConfig) => void;
   setChatConfigFn: (chatConfig: ChatConfig) => void;
+  knowledgeRefreshKey?: number | string;
 }
 
 export interface ChatMessage {
   role?: string;
   delta?: string;
+  raw_delta?: string;
   images?: {
     base64?: string;
     uid?: string;
@@ -97,6 +106,7 @@ export interface ChatMessage {
     content: string;
     index: number;
     history_id?: string;
+    raw_content?: string;
     reasoning_content?: string;
     sources?: Source[];
     thinking_duration_s?: string;
@@ -108,6 +118,7 @@ export interface ChatMessage {
 
 const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
   (props, ref) => {
+    const { t } = useTranslation();
     const {
       canChat = true,
       initialCard,
@@ -118,10 +129,12 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       parseErrorData,
       setShowHistoryList,
       showHistoryList,
+      showHistoryButton = true,
       setIsChatContent,
       chatConfig,
       setChatConfig,
       setChatConfigFn,
+      knowledgeRefreshKey,
     } = props;
     const { getModelSelection, setModelSelection, resetForNewChat } =
       useModelSelectionStore();
@@ -132,7 +145,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
           sessId ?? sessionId ?? currentConversationIdRef.current ?? "";
         if (preference === "prefer_first") {
           setModelSelection(sid, "value_engineering");
-          message.success("后续回答将为 LazyRAG 大模型");
+          message.success("后续回答将为 LazyMind 大模型");
         } else if (preference === "prefer_second") {
           setModelSelection(sid, "deepseek");
           message.success("后续回答将为DeepSeek");
@@ -148,6 +161,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       useChatMessageStore();
     const isMouseScrollingRef = useRef(false);
     const sseRef = useRef<any>(null);
+    const activeStreamRef = useRef(false);
     const fileRef = useRef<any>(null);
     const chatContentRef = useRef<HTMLDivElement>(null);
     const currentConversationIdRef = useRef<string>("");
@@ -158,6 +172,8 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
     const [messageList, setMessageList] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
     const [content, setContent] = useState("");
+    const [editingUserMessageIndex, setEditingUserMessageIndex] = useState<number | null>(null);
+    const [editingUserMessageText, setEditingUserMessageText] = useState("");
     const [thinkingCollapseMap, setThinkingCollapseMap] = useState<
       Map<string, boolean>
     >(new Map());
@@ -197,6 +213,20 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       };
     }, []);
 
+    useEffect(() => {
+      if (editingUserMessageIndex === null) {
+        return;
+      }
+      if (
+        editingUserMessageIndex < 0 ||
+        editingUserMessageIndex >= messageList.length ||
+        messageList[editingUserMessageIndex]?.role !== RoleTypes.USER
+      ) {
+        setEditingUserMessageIndex(null);
+        setEditingUserMessageText("");
+      }
+    }, [editingUserMessageIndex, messageList]);
+
     function getFileUrls(
       files: (RcFile & { uri: string })[] | undefined,
       images?: ChatImage[],
@@ -222,7 +252,8 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
 
     function sendMessage(params: SendMessageParams) {
       const { text, clearInput = true, create_time } = params;
-      if (loading || !canChat || !text) {
+      const normalizedText = text.trim();
+      if (activeStreamRef.current || loading || !canChat || !normalizedText) {
         return;
       }
 
@@ -249,7 +280,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         }) ?? {};
 
       const inputs = [
-        { input_type: "text", text },
+        { input_type: "text", text: normalizedText },
         ...getFileUrls(tempFileGroup?.image, tempGroup?.image).map((image) => {
           return {
             input_type: "image",
@@ -271,7 +302,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       );
 
       const userMessage = {
-        delta: text,
+        delta: normalizedText,
         role: RoleTypes.USER,
         images: tempGroup?.image,
         files: tempGroup?.file,
@@ -311,6 +342,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       input: any[],
       action: ChatConversationsRequestActionEnum,
     ) => {
+      activeStreamRef.current = true;
       setLoading(true);
       setIS_STREAMING(true);
 
@@ -363,6 +395,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       if (!onOpenResumeSSE) {
         return;
       }
+      activeStreamRef.current = true;
       setLoading(true);
       setIS_STREAMING(true);
       currentConversationIdRef.current = conversationId;
@@ -385,6 +418,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
 
     function closeSSE() {
       sseRef.current = null;
+      activeStreamRef.current = false;
       setLoading(false);
       setIS_STREAMING(false);
     }
@@ -587,16 +621,22 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
               content: "",
               index: answerIndex,
               history_id: result.history_id,
+              raw_content: "",
               reasoning_content: "",
               sources: [],
             };
             assistantMessage.answers.push(targetAnswer);
           }
 
-          targetAnswer.content += result.delta || "";
-          targetAnswer.reasoning_content =
-            (targetAnswer.reasoning_content || "") +
-            (result.reasoning_content || "");
+          targetAnswer.raw_content =
+            (targetAnswer.raw_content || targetAnswer.content || "") +
+            (result.delta || "");
+          const answerSplitResult = splitThinkingContent(
+            targetAnswer.raw_content,
+            targetAnswer.reasoning_content || "",
+          );
+          targetAnswer.content = answerSplitResult.content;
+          targetAnswer.reasoning_content = answerSplitResult.reasoning_content;
 
           if (result.sources && result.sources.length > 0) {
             targetAnswer.sources = result.sources;
@@ -615,17 +655,21 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             id: result.messageId || assistantMessage.id,
           };
         } else {
-          const previousDelta = assistantMessage.delta || "";
-          const previousReasoningContent =
-            assistantMessage.reasoning_content || "";
+          const previousRawDelta =
+            assistantMessage.raw_delta || assistantMessage.delta || "";
+          const mergedRawDelta = previousRawDelta + (result.delta || "");
+          const splitResult = splitThinkingContent(
+            mergedRawDelta,
+            assistantMessage.reasoning_content || "",
+          );
 
           assistantMessage = {
             ...assistantMessage,
             ...result,
             id: result.messageId,
-            delta: previousDelta + (result.delta || ""),
-            reasoning_content:
-              previousReasoningContent + (result.reasoning_content || ""),
+            raw_delta: mergedRawDelta,
+            delta: splitResult.content,
+            reasoning_content: splitResult.reasoning_content,
             sources:
               result.sources && result.sources.length > 0
                 ? result.sources
@@ -794,6 +838,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       streamManager.setActiveConversation(id || null);
 
       if (id && streamManager.hasActiveStream(id)) {
+        activeStreamRef.current = true;
         const callbacks: Record<string, (event: CustomEvent) => void> = {
           message: (event) => onMessage(event),
           error: (event) => onError(event),
@@ -923,6 +968,8 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
 
       setMessageList([]);
       messageListRef.current = [];
+      setEditingUserMessageIndex(null);
+      setEditingUserMessageText("");
       setLoading(false);
       setIS_STREAMING(false);
 
@@ -975,6 +1022,14 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       if (loading) {
         return;
       }
+      const userMessage = messageListRef.current.findLast(
+        (item: any) => item.role === RoleTypes.USER,
+      );
+      const regenerationInputs = getRegenerationInputs(userMessage);
+      if (regenerationInputs.length < 1) {
+        message.error(t("chat.regenerateInputMissing"));
+        return;
+      }
 
       const currentId = currentConversationIdRef.current;
       if (currentId) {
@@ -996,7 +1051,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         selected_answer_index: undefined,
         answer_preference: undefined,
       };
-      const newList = [...messageList];
+      const newList = [...messageListRef.current];
       newList[newList.length - 1] = assistantMessage;
       messageListRef.current = newList;
       setMessageList(newList);
@@ -1006,14 +1061,118 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         streamManager.saveMessageList(currentId, newList);
       }
 
-      const userMessage = messageList.findLast(
-        (item: any) => item.role === RoleTypes.USER,
-      );
       isMouseScrollingRef.current = true;
       openSSE(
-        userMessage?.inputs,
+        regenerationInputs,
         ChatConversationsRequestActionEnum.ChatActionRegeneration,
       );
+    }
+
+    async function handleCopyUserMessage(item: any) {
+      const text = (item?.delta || "").trim();
+      if (!text) {
+        return;
+      }
+      try {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          message.success(t("chat.copySuccess"));
+          return;
+        }
+      } catch {
+      }
+
+      const textarea = document.createElement("textarea");
+      textarea.value = text;
+      textarea.setAttribute("readonly", "");
+      textarea.style.position = "fixed";
+      textarea.style.top = "0";
+      textarea.style.left = "0";
+      textarea.style.opacity = "0";
+      document.body.appendChild(textarea);
+      textarea.focus();
+      textarea.select();
+      try {
+        const copied = document.execCommand("copy");
+        if (copied) {
+          message.success(t("chat.copySuccess"));
+        } else {
+          message.error(t("chat.copyFailedManual"));
+        }
+      } finally {
+        document.body.removeChild(textarea);
+      }
+    }
+
+    function handleStartEditUserMessage(item: any, index: number) {
+      if (loading || activeStreamRef.current) {
+        return;
+      }
+      setEditingUserMessageIndex(index);
+      setEditingUserMessageText(item?.delta || "");
+    }
+
+    function handleCancelEditUserMessage() {
+      setEditingUserMessageIndex(null);
+      setEditingUserMessageText("");
+    }
+
+    function handleResendEditedUserMessage(index: number, value: string) {
+      if (loading || activeStreamRef.current) {
+        return;
+      }
+      const normalizedText = value.trim();
+      if (!normalizedText) {
+        return;
+      }
+
+      const oldUserMessage = messageListRef.current[index];
+      if (!oldUserMessage || oldUserMessage.role !== RoleTypes.USER) {
+        return;
+      }
+
+      const oldInputs = Array.isArray(oldUserMessage.inputs) ? oldUserMessage.inputs : [];
+      const rebuiltInputs = oldInputs
+        .filter((input: any) => (input?.input_type || "text") !== "text")
+        .map((input: any) => ({ ...input }));
+      rebuiltInputs.unshift({ input_type: "text", text: normalizedText });
+
+      const newUserMessage = {
+        ...oldUserMessage,
+        delta: normalizedText,
+        inputs: rebuiltInputs,
+      };
+
+      const currentModelSelection = getModelSelection(
+        currentConversationIdRef.current || sessionId,
+      );
+      const assistantMessage = {
+        role: RoleTypes.ASSISTANT,
+        delta: "",
+        reasoning_content: "",
+        finish_reason:
+          ChatConversationsResponseFinishReasonEnum.FinishReasonUnspecified,
+        answers: [],
+        sources: [],
+        model_mode: currentModelSelection,
+      };
+
+      const truncated = messageListRef.current.slice(0, index);
+      const newList = [...truncated, newUserMessage, assistantMessage];
+      messageListRef.current = newList;
+      setMessageList(newList);
+      setEditingUserMessageIndex(null);
+      setEditingUserMessageText("");
+
+      const currentId = currentConversationIdRef.current;
+      if (currentId) {
+        conversationMessagesCache.current.set(currentId, newList);
+        streamManager.saveMessageList(currentId, newList);
+      }
+
+      isMouseScrollingRef.current = true;
+      scrollToEnd();
+      openSSE(rebuiltInputs, ChatConversationsRequestActionEnum.ChatActionRegeneration);
     }
 
     function renderText(item: any, uniqueKey?: string) {
@@ -1057,7 +1216,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
                       ChatConversationsResponseFinishReasonEnum.FinishReasonStop
                     }
                   >
-                    {item.reasoning_content}
+                    {formatThinkingForDisplay(item.reasoning_content)}
                   </MarkdownViewer>
                 </div>
                 {!item.delta &&
@@ -1083,15 +1242,36 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       );
     }
 
-    const handleScroll = () => {
+    const getScrollMetrics = useCallback(() => {
       const el = chatContentRef.current;
       if (!el) {
+        return null;
+      }
+
+      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+      return {
+        distance,
+        hasScrollbar: el.scrollHeight > el.clientHeight + 2,
+      };
+    }, []);
+
+    const updateScrollButtonVisibility = useCallback(() => {
+      const metrics = getScrollMetrics();
+      if (!metrics) {
         return;
       }
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      const hasScrollbar = el.scrollHeight > el.clientHeight + 2;
-      setShowScrollButton(hasScrollbar && distance > 10);
-      if (distance <= 10) {
+
+      setShowScrollButton(metrics.hasScrollbar && metrics.distance > 10);
+    }, [getScrollMetrics]);
+
+    const handleScroll = () => {
+      const metrics = getScrollMetrics();
+      if (!metrics) {
+        return;
+      }
+
+      setShowScrollButton(metrics.hasScrollbar && metrics.distance > 10);
+      if (metrics.distance <= 10) {
         isMouseScrollingRef.current = true;
       } else {
         isMouseScrollingRef.current = false;
@@ -1105,19 +1285,16 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       }
       isMouseScrollingRef.current = true;
       el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
-      const hasScrollbar = el.scrollHeight > el.clientHeight + 2;
-      setShowScrollButton(hasScrollbar && false);
+      setShowScrollButton(false);
     };
 
     useEffect(() => {
-      const el = chatContentRef.current;
-      if (!el) {
-        return;
-      }
-      const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
-      const hasScrollbar = el.scrollHeight > el.clientHeight + 2;
-      setShowScrollButton(hasScrollbar && distance > 10);
-    }, [messageList]);
+      const rafId = requestAnimationFrame(() => {
+        updateScrollButtonVisibility();
+      });
+
+      return () => cancelAnimationFrame(rafId);
+    }, [messageList, thinkingCollapseMap, inputHeight, updateScrollButtonVisibility]);
 
     useEffect(() => {
       const updateInputHeight = () => {
@@ -1184,6 +1361,13 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             chatContentRef={chatContentRef}
             sessionId={sessionId}
             onPreferenceSelect={handlePreferenceSelect}
+            editingUserMessageIndex={editingUserMessageIndex}
+            editingUserMessageText={editingUserMessageText}
+            onUserMessageEditTextChange={setEditingUserMessageText}
+            onStartEditUserMessage={handleStartEditUserMessage}
+            onCancelEditUserMessage={handleCancelEditUserMessage}
+            onResendEditedUserMessage={handleResendEditedUserMessage}
+            onCopyUserMessage={handleCopyUserMessage}
           />
 
           {messageList.length > 0 && (
@@ -1208,15 +1392,19 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             value={content}
             onChange={setContent}
             onSend={sendMessage}
-            openHistory={() => setShowHistoryList(true)}
+            openHistory={
+              setShowHistoryList ? () => setShowHistoryList(true) : undefined
+            }
             isChatContent={true}
             showHistoryList={showHistoryList}
+            showHistoryButton={showHistoryButton}
             openNewChat={createNewChat}
             ref={chatInputRef}
             onHeightChange={handleInputHeightChange}
             chatConfig={chatConfig}
             setChatConfig={setChatConfig}
             setChatConfigFn={setChatConfigFn}
+            knowledgeRefreshKey={knowledgeRefreshKey}
             sessionId={sessionId}
             isStreaming={IS_STREAMING}
           />

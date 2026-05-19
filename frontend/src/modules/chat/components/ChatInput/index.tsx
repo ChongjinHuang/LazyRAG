@@ -8,12 +8,11 @@ import {
   useMemo,
 } from "react";
 import { RcFile } from "antd/es/upload";
-import { Button, Input, Tooltip, message } from "antd";
+import { Button, Input, message } from "antd";
 import { debounce } from "lodash";
 import AttachmentIcon from "../../assets/icons/attachment_icon.svg?react";
 import SendIcon from "../../assets/icons/send_icon.svg?react";
 import AddIcon from "../../assets/icons/add.svg?react";
-import BatchChatIcon from "../../assets/icons/batch_chat.svg?react";
 
 import ImageUpload, {
   allowedImageTypes,
@@ -32,7 +31,6 @@ import { ChatConfig } from "../ChatConfigs";
 import ChatSelector from "../ChatSelector";
 import PromptModal, { PromptImperativeProps } from "../PromptModal";
 import BatchChatComponent, { BatchChatImperativeProps } from "../BatchChat";
-import ModelSelector from "../ModelSelector";
 import ShowChatFileList from "../ShowChatFileList";
 import { formatFileSize } from "@/modules/chat/utils";
 import { useChatThinkStore } from "@/modules/chat/store/chatThink";
@@ -116,15 +114,17 @@ interface ChatInputProps {
   onChange: (value: string) => void;
   onSend?: (params: SendMessageParams) => void;
   placeholder?: string;
-  openHistory: () => void;
+  openHistory?: () => void;
   openNewChat?: () => void;
   isChatContent: boolean;
-  showHistoryList: boolean;
+  showHistoryList?: boolean;
+  showHistoryButton?: boolean;
   setIsChatContent?: (isChatContent: boolean) => void;
   onHeightChange?: () => void;
   chatConfig?: ChatConfig;
   setChatConfig?: (chatConfig: ChatConfig) => void;
   setChatConfigFn?: (chatConfig: ChatConfig) => void;
+  knowledgeRefreshKey?: number | string;
   sessionId?: string;
   isStreaming?: boolean;
 }
@@ -151,7 +151,8 @@ const SendButton: React.FC<SendIconProps> = ({ disabled, onClick }) => {
   return (
     <div
       className={`send-button ${disabled ? "disabled" : ""}`}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      aria-disabled={disabled}
     >
       <SendIcon />
     </div>
@@ -171,11 +172,13 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
       openNewChat,
       isChatContent,
       showHistoryList,
+      showHistoryButton = true,
       onHeightChange,
       setIsChatContent,
       chatConfig,
       setChatConfig,
       setChatConfigFn,
+      knowledgeRefreshKey,
       sessionId,
       isStreaming = false,
     } = props;
@@ -183,6 +186,7 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
     const promptRef = useRef<PromptImperativeProps>(null);
     const batchChatRef = useRef<BatchChatImperativeProps | null>(null);
     const innerRef = useRef<HTMLDivElement>(null);
+    const isComposingRef = useRef(false);
     const [isUploading, setIsUploading] = useState(false);
     const { setThink } = useChatThinkStore();
     const { setNewMessage } = useChatNewMessageStore();
@@ -368,14 +372,16 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
         preprocessUpload(newFiles, currentFiles, hasKB, t),
       [hasKB, t],
     );
+    const isSendDisabled = !value?.trim() || isUploading || isStreaming;
 
     const handleSend = () => {
-      if (!value?.length || isUploading) {
+      if (isSendDisabled) {
         return;
       }
+      const normalizedText = value.trim();
       setNewMessage(false);
       const sendParams = {
-        text: value,
+        text: normalizedText,
         fileList,
         fileListRef,
         files: fileListRef.current?.getFiles(),
@@ -473,6 +479,26 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
       [fileList.length],
     );
 
+    const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (e.key !== "Enter" || e.shiftKey || isUploading) {
+        return;
+      }
+
+      // IME candidate confirmation also uses Enter, and some browsers only
+      // expose the composition state through the native event / keyCode 229.
+      if (
+        isComposingRef.current ||
+        e.nativeEvent.isComposing ||
+        e.nativeEvent.keyCode === 229
+      ) {
+        return;
+      }
+
+      e.preventDefault();
+      handleSend();
+      setNewMessage(false);
+    };
+
     return (
       <div className="input-wrapper" ref={innerRef}>
         <div className="input-container">
@@ -488,13 +514,13 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
                 value={value}
                 onChange={(e) => handleInputChange(e.target.value)}
                 onPaste={handlePaste}
-                onKeyUp={(e) => {
-                  if (e.key === "Enter" && !e.shiftKey && !isUploading) {
-                    e.preventDefault();
-                    handleSend();
-                    setNewMessage(false);
-                  }
+                onCompositionStart={() => {
+                  isComposingRef.current = true;
                 }}
+                onCompositionEnd={() => {
+                  isComposingRef.current = false;
+                }}
+                onKeyDown={handleKeyDown}
               />
 
               <div className="input-bottom-actions">
@@ -516,15 +542,18 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
                   )}
                   <ChatSelector
                     chatConfig={chatConfig ?? {}}
+                    refreshKey={knowledgeRefreshKey}
                     onChange={onKnowledgeBaseChange}
                   />
                   {/* <ModelSelector sessionId={sessionId} disabled={isStreaming} /> */}
-                  <div
-                    className={`input-bottom-actions-left-item ${showHistoryList ? "selected" : ""}`}
-                    onClick={openHistory}
-                  >
-                    {t("chat.chatHistory")}
-                  </div>
+                  {showHistoryButton && openHistory && (
+                    <div
+                      className={`input-bottom-actions-left-item ${showHistoryList ? "selected" : ""}`}
+                      onClick={openHistory}
+                    >
+                      {t("chat.chatHistory")}
+                    </div>
+                  )}
                   <div
                     className={"input-bottom-actions-left-item"}
                     onClick={() => promptRef.current?.onOpen()}
@@ -548,7 +577,7 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
                   </div>
                   <div className="input-bottom-actions-right-item">
                     <SendButton
-                      disabled={!value?.length || isUploading}
+                      disabled={isSendDisabled}
                       onClick={handleSend}
                     />
                   </div>
@@ -563,7 +592,7 @@ const ChatInput = forwardRef<ChatInputImperativeProps, ChatInputProps>(
         />
         <BatchChatComponent
           ref={batchChatRef}
-          cancelFn={(bool) => {
+          cancelFn={() => {
 
           }}
         />

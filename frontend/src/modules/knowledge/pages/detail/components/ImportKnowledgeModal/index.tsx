@@ -18,6 +18,7 @@ import {
 import TagSelect from "@/modules/knowledge/components/TagSelect";
 import { useDatasetPermissionStore } from "@/modules/knowledge/store/dataset_permission";
 
+// jpg, mp3, mp4 will be supported in the future
 const ALLOWED_FILE_TYPES = ["pdf", "docx", "doc"];
 const SINGLE_FILE_MAX_SIZE = 500 * 1024 * 1024;
 const TOTAL_FILE_MAX_SIZE = 1 * 1024 * 1024 * 1024;
@@ -41,7 +42,7 @@ export interface IImportKnowledgeModalRef {
 }
 
 interface IProps {
-  onOk: () => void;
+  onOk: (payload?: { pId?: string }) => void;
 }
 
 const InitData = {
@@ -138,7 +139,7 @@ const ImportKnowledgeModal = (props: IProps, ref: Ref<unknown> | undefined) => {
 
       message.success(t("knowledge.uploadAndCreateTaskSuccess"));
       handleClose();
-      onOk();
+      onOk({ pId: data.p_id });
     } catch (err) {
       console.error(err);
       message.error(
@@ -360,14 +361,14 @@ const ImportKnowledgeModal = (props: IProps, ref: Ref<unknown> | undefined) => {
                     isDirectoryMode
                       ? t("knowledge.supportedDocTypes")
                       : isZipMode
-                        ? t("knowledge.importZip")
+                        ? t("knowledge.supportedZipFile")
                         : t("knowledge.supportedDocTypes")
                   }
                   invalidDropMessage={
                     isDirectoryMode
                       ? t("knowledge.importFolder")
                       : isZipMode
-                        ? t("knowledge.importZip")
+                        ? t("knowledge.supportedZipFile")
                         : t("knowledge.supportedDocTypes")
                   }
                   description={
