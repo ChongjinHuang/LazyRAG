@@ -321,6 +321,110 @@ _ZH_TOOL_RESULT_APPROVAL_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_write': '写入这个飞书文件前，请先确认提示“{value}”。',
 }
 
+_NOTION_TOOL_ARGUMENTS = {
+    'NotionFS_ls': 'path',
+    'NotionFS_info': 'path',
+    'NotionFS_mkdir': 'path',
+    'NotionFS_rm': 'path',
+    'NotionFS_exists': 'path',
+    'NotionFS_read': 'path',
+    'NotionFS_read_file': 'path',
+    'NotionFS_write': 'path',
+    'NotionFS_move': 'path1',
+    'NotionFS_copy': 'path1',
+}
+_NOTION_TOOL_RESULTS = {
+    **_NOTION_TOOL_ARGUMENTS,
+    'NotionFS_read_file': 'content',
+    'NotionFS_move': 'path2',
+    'NotionFS_copy': 'path2',
+}
+_REPRESENTATIVE_TOOL_ARGUMENTS.update(_NOTION_TOOL_ARGUMENTS)
+_REPRESENTATIVE_TOOL_RESULTS.update(_NOTION_TOOL_RESULTS)
+
+_TOOL_CALL_PREVIEW_TEMPLATES.update({
+    'NotionFS_ls': 'Listing Notion page contents at {value}.',
+    'NotionFS_info': 'Fetching Notion page info for {value}.',
+    'NotionFS_mkdir': 'Creating Notion page at {value}.',
+    'NotionFS_rm': 'Deleting Notion page or block at {value}.',
+    'NotionFS_exists': 'Checking whether {value} exists in Notion.',
+    'NotionFS_read': 'Reading Notion content from {value}.',
+    'NotionFS_read_file': 'Reading Notion content from {value}.',
+    'NotionFS_write': 'Writing content to Notion at {value}.',
+    'NotionFS_move': 'Moving Notion content from {value} to the target path.',
+    'NotionFS_copy': 'Copying Notion content from {value} to the target path.',
+})
+_ZH_TOOL_CALL_PREVIEW_TEMPLATES.update({
+    'NotionFS_ls': '正在列出 Notion 页面 {value} 的内容。',
+    'NotionFS_info': '正在获取 Notion 页面 {value} 的信息。',
+    'NotionFS_mkdir': '正在 Notion 中创建页面 {value}。',
+    'NotionFS_rm': '正在删除 Notion 页面或块 {value}。',
+    'NotionFS_exists': '正在检查 {value} 是否存在于 Notion 中。',
+    'NotionFS_read': '正在读取 Notion 页面 {value} 的内容。',
+    'NotionFS_read_file': '正在读取 Notion 页面 {value} 的内容。',
+    'NotionFS_write': '正在向 Notion 页面 {value} 写入内容。',
+    'NotionFS_move': '正在将 Notion 内容从 {value} 移动到目标路径。',
+    'NotionFS_copy': '正在将 Notion 内容从 {value} 复制到目标路径。',
+})
+_TOOL_RESULT_PREVIEW_TEMPLATES.update({
+    'NotionFS_ls': 'Notion page contents at {value} were listed successfully.',
+    'NotionFS_info': 'Notion page info for {value} was retrieved successfully.',
+    'NotionFS_mkdir': 'Notion page at {value} was created successfully.',
+    'NotionFS_rm': 'Notion page or block at {value} was deleted successfully.',
+    'NotionFS_exists': 'Existence check for {value} in Notion completed successfully.',
+    'NotionFS_read': 'Notion content from {value} was loaded successfully.',
+    'NotionFS_read_file': 'Notion content from {value} was loaded successfully.',
+    'NotionFS_write': 'Content was written to Notion at {value} successfully.',
+    'NotionFS_move': 'Notion content was moved from {value} to the target path successfully.',
+    'NotionFS_copy': 'Notion content was copied from {value} to the target path successfully.',
+})
+_ZH_TOOL_RESULT_PREVIEW_TEMPLATES.update({
+    'NotionFS_ls': '已成功列出 Notion 页面 {value} 的内容。',
+    'NotionFS_info': '已成功获取 Notion 页面 {value} 的信息。',
+    'NotionFS_mkdir': '已成功在 Notion 中创建页面 {value}。',
+    'NotionFS_rm': '已成功删除 Notion 页面或块 {value}。',
+    'NotionFS_exists': '已完成对 Notion 中 {value} 的存在性检查。',
+    'NotionFS_read': '已成功读取 Notion 页面 {value} 的内容。',
+    'NotionFS_read_file': '已成功读取 Notion 页面 {value} 的内容。',
+    'NotionFS_write': '已成功向 Notion 页面 {value} 写入内容。',
+    'NotionFS_move': '已成功将 Notion 内容从 {value} 移动到目标路径。',
+    'NotionFS_copy': '已成功将 Notion 内容从 {value} 复制到目标路径。',
+})
+_TOOL_RESULT_FAILURE_TEMPLATES.update({
+    'NotionFS_ls': 'Notion page contents at {value} could not be listed.',
+    'NotionFS_info': 'Notion page info for {value} could not be retrieved.',
+    'NotionFS_mkdir': 'Notion page at {value} could not be created.',
+    'NotionFS_rm': 'Notion page or block at {value} could not be deleted.',
+    'NotionFS_exists': 'Existence check for {value} in Notion could not be completed.',
+    'NotionFS_read': 'Notion content from {value} could not be loaded.',
+    'NotionFS_read_file': 'Notion content from {value} could not be loaded.',
+    'NotionFS_write': 'Content could not be written to Notion at {value}.',
+    'NotionFS_move': 'Notion content could not be moved from {value} to the target path.',
+    'NotionFS_copy': 'Notion content could not be copied from {value} to the target path.',
+})
+_ZH_TOOL_RESULT_FAILURE_TEMPLATES.update({
+    'NotionFS_ls': '未能列出 Notion 页面 {value} 的内容。',
+    'NotionFS_info': '未能获取 Notion 页面 {value} 的信息。',
+    'NotionFS_mkdir': '未能在 Notion 中创建页面 {value}。',
+    'NotionFS_rm': '未能删除 Notion 页面或块 {value}。',
+    'NotionFS_exists': '未能完成对 Notion 中 {value} 的存在性检查。',
+    'NotionFS_read': '未能读取 Notion 页面 {value} 的内容。',
+    'NotionFS_read_file': '未能读取 Notion 页面 {value} 的内容。',
+    'NotionFS_write': '未能向 Notion 页面 {value} 写入内容。',
+    'NotionFS_move': '未能将 Notion 内容从 {value} 移动到目标路径。',
+    'NotionFS_copy': '未能将 Notion 内容从 {value} 复制到目标路径。',
+})
+_TOOL_RESULT_APPROVAL_TEMPLATES.update({
+    'NotionFS_rm': 'Please review the confirmation note "{value}" before deleting this Notion page.',
+    'NotionFS_move': 'Please review the confirmation note "{value}" before moving this Notion page.',
+    'NotionFS_write': 'Please review the confirmation note "{value}" before writing this Notion page.',
+})
+_ZH_TOOL_RESULT_APPROVAL_TEMPLATES.update({
+    'NotionFS_rm': '删除这个 Notion 页面前，请先确认提示“{value}”。',
+    'NotionFS_move': '移动这个 Notion 页面前，请先确认提示“{value}”。',
+    'NotionFS_write': '写入这个 Notion 页面前，请先确认提示“{value}”。',
+})
+
 _TOOL_RESULT_FALLBACK_TEMPLATE = 'Tool results for {value} were received successfully.'
 _TOOL_RESULT_FAILURE_FALLBACK_TEMPLATE = 'The step for {value} could not be completed.'
 _TOOL_RESULT_APPROVAL_FALLBACK_TEMPLATE = 'Please review the confirmation note "{value}" before continuing.'

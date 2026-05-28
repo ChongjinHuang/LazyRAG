@@ -51,6 +51,7 @@ from chat.components.agentic.tool_stream import (  # noqa: E402
 )
 from lazyllm import AutoModel  # noqa: E402
 from lazyllm.tools.fs.supplier.feishu import FeishuFS  # type: ignore[import]  # noqa: E402
+from lazyllm.tools.fs.supplier.notion import NotionFS  # type: ignore[import]  # noqa: E402
 from chat.utils.load_config import get_config_path  # noqa: E402
 
 
@@ -202,16 +203,24 @@ class _StreamingReactAgent(lazyllm.tools.agent.ReactAgent):
         self._agent = agent
 
 
-def _feishu_key_source(_instance) -> str:
+def _dynamic_fs_key_source(provider: str) -> str:
     try:
         mapping = lazyllm.globals.config['dynamic_fs_auth'] or {}
     except Exception:
         return ''
-    r = (mapping.get('feishu') or '').strip()
-    return r
+    return (mapping.get(provider) or '').strip()
+
+
+def _feishu_key_source(_instance) -> str:
+    return _dynamic_fs_key_source('feishu')
+
+
+def _notion_key_source(_instance) -> str:
+    return _dynamic_fs_key_source('notion')
 
 
 _FEISHU_FS_INSTANCE = FeishuFS(space_id='dynamic', dynamic_auth=True)
+_NOTION_FS_INSTANCE = NotionFS(dynamic_auth=True)
 
 
 def agentic_forward(
@@ -241,7 +250,10 @@ def agentic_forward(
     agent_cls = _StreamingReactAgent if stream_event_callback else lazyllm.tools.agent.ReactAgent
     agent_kwargs = {
         'llm': llm,
-        'tools': available_tools + [(_FEISHU_FS_INSTANCE, _feishu_key_source)],
+        'tools': available_tools + [
+            (_FEISHU_FS_INSTANCE, _feishu_key_source),
+            (_NOTION_FS_INSTANCE, _notion_key_source),
+        ],
         'max_retries': _cfg['max_retries'],
         'stream': bool(stream_event_callback),
         'prompt': runtime_prompt,
