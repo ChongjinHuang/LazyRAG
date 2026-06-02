@@ -91,6 +91,14 @@ TOOL_CALL_STATUS_GUIDANCE = (
     "what you are about to do. Keep it action-oriented and do not reveal hidden "
     "reasoning. Then make the tool call in the same response."
 )
+DOCUMENT_LINK_GUIDANCE = (
+    "# Document URL tool flow\n"
+    "When the user gives a Feishu or Notion document URL, first call the matching "
+    "`*_resolve_link` tool to inspect title/type/child availability. Then choose "
+    "`*_ls` for child pages or databases, and `*_read_with_references` when the "
+    "answer requires document content plus linked references. Use the same flow for "
+    "future URL-addressable document sources when they expose these standard tools."
+)
 TOOL_USE_ENFORCEMENT_GUIDANCE = (
     "# Tool-use enforcement\n"
     "You MUST use your tools to take action. Do not describe what you plan to do "

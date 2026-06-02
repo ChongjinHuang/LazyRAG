@@ -4,6 +4,7 @@ from typing import Any
 
 from chat.prompts.agentic import (
     DEFAULT_SYSTEM_PROMPT,
+    DOCUMENT_LINK_GUIDANCE,
     IMAGE_REFERENCE_MARKDOWN_GUIDANCE,
     VISION_EXTRACTOR_GUIDANCE,
     MEMORY_GUIDANCE,
@@ -190,6 +191,7 @@ def _build_runtime_system_prompt(config: dict, available_tools: list[str]) -> st
         prompt_parts.append(' '.join(tool_guidance))
     if available_tools:
         prompt_parts.append(TOOL_CALL_STATUS_GUIDANCE)
+    prompt_parts.append(DOCUMENT_LINK_GUIDANCE)
     if any(tool.startswith('kb_') for tool in available_tools):
         prompt_parts.append(SEARCH_GUIDANCE)
     if (
