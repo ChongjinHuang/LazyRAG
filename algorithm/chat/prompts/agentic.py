@@ -93,11 +93,18 @@ TOOL_CALL_STATUS_GUIDANCE = (
 )
 DOCUMENT_LINK_GUIDANCE = (
     "# Document URL tool flow\n"
-    "When the user gives a Feishu or Notion document URL, first call the matching "
-    "`*_resolve_link` tool to inspect title/type/child availability. Then choose "
-    "`*_ls` for child pages or databases, and `*_read_with_references` when the "
-    "answer requires document content plus linked references. Use the same flow for "
-    "future URL-addressable document sources when they expose these standard tools."
+    "When the user gives a Feishu or Notion document URL, do not use generic "
+    "`url_fetch` or `web_search` first. First call the matching document tool "
+    "(`FeishuWikiFS_resolve_link` or `NotionFS_resolve_link`) to inspect title, "
+    "type, and child availability. Then choose the matching `*_ls` for child pages "
+    "or databases, and `*_read_with_references` when the answer requires document "
+    "content plus linked references. For Notion, access is through the Notion "
+    "integration secret supplied by tool config and page/database sharing to that "
+    "integration; do not ask for or rely on a browser login session. If Notion "
+    "authorization is missing or denied, say that a Notion integration secret must "
+    "be supplied and the page/database must be shared with the integration. Use the "
+    "same flow for future URL-addressable document sources when they expose these "
+    "standard tools."
 )
 TOOL_USE_ENFORCEMENT_GUIDANCE = (
     "# Tool-use enforcement\n"
