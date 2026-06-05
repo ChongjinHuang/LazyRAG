@@ -206,9 +206,12 @@ class _StreamingReactAgent(lazyllm.tools.agent.ReactAgent):
 def _dynamic_fs_key_source(provider: str) -> str:
     try:
         mapping = lazyllm.globals.config['dynamic_fs_auth'] or {}
+        if not isinstance(mapping, dict):
+            return ''
+        value = mapping.get(provider)
+        return value.strip() if isinstance(value, str) else ''
     except Exception:
         return ''
-    return (mapping.get(provider) or '').strip()
 
 
 def _feishu_key_source(_instance) -> str:
