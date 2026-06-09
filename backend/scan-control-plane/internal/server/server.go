@@ -26,6 +26,7 @@ import (
 	"github.com/lazymind/scan_control_plane/internal/cloudsync/authclient"
 	cloudprovider "github.com/lazymind/scan_control_plane/internal/cloudsync/provider"
 	"github.com/lazymind/scan_control_plane/internal/cloudsync/provider/feishu"
+	"github.com/lazymind/scan_control_plane/internal/cloudsync/provider/notion"
 	"github.com/lazymind/scan_control_plane/internal/coreclient"
 	"github.com/lazymind/scan_control_plane/internal/model"
 	"github.com/lazymind/scan_control_plane/internal/sourcelayout"
@@ -100,6 +101,7 @@ func NewHandler(
 		cloudAuth:     cloudAuthClient,
 		cloudProviders: map[string]cloudprovider.Provider{
 			"feishu": feishu.NewWithLogger(cloudHTTPTimeout, log),
+			"notion": notion.NewWithLogger(cloudHTTPTimeout, log),
 		},
 		client: &http.Client{
 			Timeout: 10 * time.Second,
@@ -2113,7 +2115,7 @@ func cloudKindMatchSuffixes(kind string) []string {
 
 func cloudWikiPageWithChildren(kind string, meta map[string]any) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "doc", "docx":
+	case "doc", "docx", "page", "notion_page":
 	default:
 		return false
 	}
@@ -2122,14 +2124,14 @@ func cloudWikiPageWithChildren(kind string, meta map[string]any) bool {
 
 func cloudWikiPageObject(kind string, meta map[string]any) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "doc", "docx":
+	case "doc", "docx", "page", "notion_page":
 	default:
 		return false
 	}
 	if cloudWikiPageWithChildren(kind, meta) {
 		return true
 	}
-	for _, key := range []string{"node_token", "space_id", "obj_token", "obj_type", "wiki_token"} {
+	for _, key := range []string{"node_token", "space_id", "obj_token", "obj_type", "wiki_token", "page_id"} {
 		if raw, ok := meta[key]; ok && raw != nil && strings.TrimSpace(fmt.Sprintf("%v", raw)) != "" {
 			return true
 		}
@@ -2181,7 +2183,7 @@ func cloudRemoteObjectShouldBeWikiParent(kind string, meta map[string]any) bool 
 		return true
 	}
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "doc", "docx":
+	case "doc", "docx", "page", "notion_page":
 		return true
 	default:
 		return false
@@ -2223,7 +2225,7 @@ func cloudNormalizeKind(kind string, meta map[string]any) string {
 
 func cloudIsDirKind(kind string) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "folder", "directory", "dir", "wiki", "space":
+	case "folder", "directory", "dir", "wiki", "space", "database", "notion_database":
 		return true
 	default:
 		return false
@@ -2359,7 +2361,7 @@ func cloudSanitizeRelativePath(externalPath, externalName, objectID, kind string
 	}
 	if !cloudIsDirKind(kind) && path.Ext(rel) == "" {
 		switch strings.ToLower(strings.TrimSpace(kind)) {
-		case "doc", "docx":
+		case "doc", "docx", "page", "notion_page":
 			rel += ".md"
 		}
 	}

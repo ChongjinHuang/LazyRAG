@@ -17,6 +17,7 @@ import (
 	"github.com/lazymind/scan_control_plane/internal/cloudsync/mirror"
 	"github.com/lazymind/scan_control_plane/internal/cloudsync/provider"
 	"github.com/lazymind/scan_control_plane/internal/cloudsync/provider/feishu"
+	"github.com/lazymind/scan_control_plane/internal/cloudsync/provider/notion"
 	"github.com/lazymind/scan_control_plane/internal/config"
 	"github.com/lazymind/scan_control_plane/internal/model"
 	"github.com/lazymind/scan_control_plane/internal/sourcelayout"
@@ -71,6 +72,7 @@ func New(cfg config.CloudSyncConfig, st Store, log *zap.Logger) *Runner {
 		),
 		providers: map[string]provider.Provider{
 			"feishu": feishu.NewWithLogger(cfg.HTTPTimeout, log),
+			"notion": notion.NewWithLogger(cfg.HTTPTimeout, log),
 		},
 		log:       log,
 		owner:     fmt.Sprintf("cloudsync-%d", time.Now().UnixNano()),
@@ -820,7 +822,7 @@ func kindMatchSuffixes(kind string) []string {
 
 func wikiPageWithChildren(kind string, meta map[string]any) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "doc", "docx":
+	case "doc", "docx", "page", "notion_page":
 	default:
 		return false
 	}
@@ -841,7 +843,7 @@ func normalizeKind(kind string, meta map[string]any) string {
 
 func isDirKind(kind string) bool {
 	switch strings.ToLower(strings.TrimSpace(kind)) {
-	case "folder", "directory", "dir", "wiki", "space":
+	case "folder", "directory", "dir", "wiki", "space", "database", "notion_database":
 		return true
 	default:
 		return false
@@ -863,7 +865,7 @@ func sanitizeRelativePath(externalPath, externalName, objectID, kind string) str
 	}
 	if !isDirKind(kind) && path.Ext(rel) == "" {
 		switch strings.ToLower(strings.TrimSpace(kind)) {
-		case "doc", "docx":
+		case "doc", "docx", "page", "notion_page":
 			rel += ".md"
 		}
 	}

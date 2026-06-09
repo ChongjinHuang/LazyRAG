@@ -15,8 +15,11 @@ const (
 	_scanSourcesTimeout = 5 * time.Second
 	_authTokenTimeout   = 5 * time.Second
 	_feishuProvider     = "feishu"
+	_notionProvider     = "notion"
 	_cloudBindingActive = "active"
 )
+
+var _cloudToolProviders = []string{_feishuProvider, _notionProvider}
 
 // _scanSourceItem is a minimal projection of the scan-control-plane Source model.
 type _scanSourceItem struct {
@@ -49,17 +52,16 @@ func authServiceInternalHeaders() map[string]string {
 	return headers
 }
 
-// fetchFeishuToken looks up the first active feishu source for userID,
-// retrieves its OAuth access token from auth-service, and returns it.
-// Returns ("", nil) when the user has no active feishu source.
-func fetchFeishuToken(ctx context.Context, r *http.Request, userID string) (string, error) {
-	fmt.Printf("[Core] [FEISHU_TOKEN] fetchFeishuToken called userID=%q\n", userID)
+// fetchCloudToolConfig looks up active cloud sources for providers that can be
+// used directly by chat tools, retrieves their tokens from auth-service, and
+// returns a tool_config map accepted by the algorithm chat service.
+func fetchCloudToolConfig(ctx context.Context, r *http.Request, userID string) (map[string]string, error) {
+	fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] fetchCloudToolConfig called userID=%q\n", userID)
 	if strings.TrimSpace(userID) == "" {
-		fmt.Printf("[Core] [FEISHU_TOKEN] empty userID, skip\n")
-		return "", nil
+		fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] empty userID, skip\n")
+		return nil, nil
 	}
 
-	// 1. List the user's sources from scan-control-plane.
 	scanURL := fmt.Sprintf("%s/api/scan/sources", common.ScanControlPlaneEndpoint())
 	var sourcesResp _scanSourcesResponse
 	err := common.ApiGet(
@@ -70,42 +72,55 @@ func fetchFeishuToken(ctx context.Context, r *http.Request, userID string) (stri
 		_scanSourcesTimeout,
 	)
 	if err != nil {
-		return "", fmt.Errorf("list scan sources: %w", err)
+		return nil, fmt.Errorf("list scan sources: %w", err)
 	}
 
-	// 2. Find the first feishu cloud binding with an active status and a connection ID.
-	// The source_type may be "cloud_sync" with provider info inside cloud_binding,
-	// so we check cloud_binding.provider == "feishu" and cloud_binding.status == "ACTIVE".
-	connectionID := ""
+	connectionIDs := map[string]string{}
 	for _, src := range sourcesResp.Items {
 		cb := src.CloudBinding
 		if cb == nil || strings.TrimSpace(cb.AuthConnectionID) == "" {
 			continue
 		}
-		if !strings.EqualFold(cb.Provider, _feishuProvider) {
-			continue
-		}
 		if !strings.EqualFold(cb.Status, _cloudBindingActive) {
 			continue
 		}
-		connectionID = cb.AuthConnectionID
-		break
+		provider := strings.ToLower(strings.TrimSpace(cb.Provider))
+		if provider == "" || connectionIDs[provider] != "" {
+			continue
+		}
+		connectionIDs[provider] = strings.TrimSpace(cb.AuthConnectionID)
 	}
 
-	if connectionID == "" {
-		fmt.Printf("[Core] [FEISHU_TOKEN] no active feishu binding found for userID=%q (total sources=%d)\n", userID, len(sourcesResp.Items))
-		return "", nil
+	toolConfig := map[string]string{}
+	for _, provider := range _cloudToolProviders {
+		connectionID := connectionIDs[provider]
+		if connectionID == "" {
+			fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] no active %s binding found for userID=%q (total sources=%d)\n", provider, userID, len(sourcesResp.Items))
+			continue
+		}
+		fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] found provider=%q connectionID=%q for userID=%q\n", provider, connectionID, userID)
+		tok, err := fetchCloudProviderToken(ctx, provider, connectionID)
+		if err != nil {
+			return nil, err
+		}
+		if tok != "" {
+			toolConfig[provider] = tok
+		}
 	}
-	fmt.Printf("[Core] [FEISHU_TOKEN] found connectionID=%q for userID=%q\n", connectionID, userID)
+	if len(toolConfig) == 0 {
+		return nil, nil
+	}
+	return toolConfig, nil
+}
 
-	// 3. Fetch the access token from auth-service using the internal token.
+func fetchCloudProviderToken(ctx context.Context, provider, connectionID string) (string, error) {
 	tokenURL := fmt.Sprintf(
 		"%s/v1/cloud/connections/%s/token",
 		common.AuthServiceBaseURL(),
 		connectionID,
 	)
 	var tokenResp _authTokenResponse
-	err = common.ApiGet(
+	err := common.ApiGet(
 		ctx,
 		tokenURL,
 		authServiceInternalHeaders(),
@@ -113,10 +128,48 @@ func fetchFeishuToken(ctx context.Context, r *http.Request, userID string) (stri
 		_authTokenTimeout,
 	)
 	if err != nil {
-		return "", fmt.Errorf("fetch feishu token for connection %s: %w", connectionID, err)
+		return "", fmt.Errorf("fetch %s token for connection %s: %w", provider, connectionID, err)
 	}
 
 	tok := strings.TrimSpace(tokenResp.Data.AccessToken)
-	fmt.Printf("[Core] [FEISHU_TOKEN] got token len=%d for connectionID=%q\n", len(tok), connectionID)
+	fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] got provider=%q token len=%d for connectionID=%q\n", provider, len(tok), connectionID)
 	return tok, nil
+}
+
+// fetchFeishuToken keeps the old helper available for focused tests and callers
+// while the chat path uses the generic cloud tool config fetcher.
+func fetchFeishuToken(ctx context.Context, r *http.Request, userID string) (string, error) {
+	tokens, err := fetchCloudToolConfig(ctx, r, userID)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(tokens[_feishuProvider]), nil
+}
+
+func mergeToolConfig(reqBody map[string]any, toolConfig map[string]string) {
+	if len(toolConfig) == 0 {
+		return
+	}
+	merged := map[string]string{}
+	if existing, ok := reqBody["tool_config"].(map[string]string); ok {
+		for k, v := range existing {
+			if strings.TrimSpace(k) != "" && strings.TrimSpace(v) != "" {
+				merged[k] = v
+			}
+		}
+	} else if existing, ok := reqBody["tool_config"].(map[string]any); ok {
+		for k, v := range existing {
+			if sv, ok := v.(string); ok && strings.TrimSpace(k) != "" && strings.TrimSpace(sv) != "" {
+				merged[k] = sv
+			}
+		}
+	}
+	for k, v := range toolConfig {
+		if strings.TrimSpace(k) != "" && strings.TrimSpace(v) != "" {
+			merged[k] = v
+		}
+	}
+	if len(merged) > 0 {
+		reqBody["tool_config"] = merged
+	}
 }
