@@ -1,5 +1,18 @@
+import asyncio
+import json
 import sys
 from types import ModuleType, SimpleNamespace
+
+from lazymind.chat.service import chat_service
+
+
+async def _collect_streaming_response(response):
+    chunks = []
+    async for chunk in response.body_iterator:
+        if isinstance(chunk, bytes):
+            chunk = chunk.decode('utf-8')
+        chunks.append(chunk)
+    return ''.join(chunks)
 
 
 def _import_agentic_module(monkeypatch):
@@ -39,6 +52,17 @@ def _import_agentic_module(monkeypatch):
     fake_lazyllm_tools_fs = ModuleType('lazyllm.tools.fs')
     fake_lazyllm_tools_fs_client = ModuleType('lazyllm.tools.fs.client')
     fake_lazyllm_tools_fs_client.FS = object
+    fake_lazyllm_tools_fs_supplier = ModuleType('lazyllm.tools.fs.supplier')
+    fake_lazyllm_tools_fs_supplier_feishu = ModuleType('lazyllm.tools.fs.supplier.feishu')
+
+    class _FakeFeishuFS:
+        def __init__(self, *args, **kwargs):
+            pass
+
+    fake_lazyllm_tools_fs_supplier_feishu.FeishuFS = _FakeFeishuFS
+    fake_lazyllm_tracing = ModuleType('lazyllm.tracing')
+    fake_lazyllm_tracing.set_trace_context = lambda *a, **kw: None
+
     fake_lazyllm_tools_sandbox = ModuleType('lazyllm.tools.sandbox')
     fake_lazyllm_tools_sandbox_base = ModuleType('lazyllm.tools.sandbox.sandbox_base')
     fake_lazyllm_tools_sandbox_base.create_sandbox = lambda *a, **kw: None
@@ -59,10 +83,13 @@ def _import_agentic_module(monkeypatch):
     # Symbols used by chat.components.agentic.config
     fake_prompts.CITATION_GUIDANCE = ''
     fake_prompts.DEFAULT_SYSTEM_PROMPT = ''
+    fake_prompts.IMAGE_REFERENCE_MARKDOWN_GUIDANCE = ''
+    fake_prompts.VISION_EXTRACTOR_GUIDANCE = ''
     fake_prompts.MEMORY_GUIDANCE = ''
     fake_prompts.SEARCH_GUIDANCE = ''
     fake_prompts.SKILLS_GUIDANCE = ''
     fake_prompts.TOOL_CALL_STATUS_GUIDANCE = ''
+    fake_prompts.VOCAB_GUIDANCE = ''
     fake_prompts._COMBINED_REVIEW_PROMPT = ''
     fake_prompts._MEMORY_REVIEW_PROMPT = ''
     fake_prompts._SKILL_REVIEW_PROMPT = ''
@@ -87,6 +114,9 @@ def _import_agentic_module(monkeypatch):
         'memory_review_interval': 1,
         'skill_review_interval': 5,
         'model_config_path': 'dynamic',
+        'skill_fs_url': 'remote://skills',
+        'agentic_keep_full_turns': 3,
+        'agentic_workspace': './workspace',
     }
 
     # Fake chat.pipelines package for isolated agentic import
@@ -114,6 +144,9 @@ def _import_agentic_module(monkeypatch):
     monkeypatch.setitem(sys.modules, 'lazyllm.tools.agent.functionCall', fake_lazyllm_tools_agent_fc)
     monkeypatch.setitem(sys.modules, 'lazyllm.tools.fs', fake_lazyllm_tools_fs)
     monkeypatch.setitem(sys.modules, 'lazyllm.tools.fs.client', fake_lazyllm_tools_fs_client)
+    monkeypatch.setitem(sys.modules, 'lazyllm.tools.fs.supplier', fake_lazyllm_tools_fs_supplier)
+    monkeypatch.setitem(sys.modules, 'lazyllm.tools.fs.supplier.feishu', fake_lazyllm_tools_fs_supplier_feishu)
+    monkeypatch.setitem(sys.modules, 'lazyllm.tracing', fake_lazyllm_tracing)
     monkeypatch.setitem(sys.modules, 'lazyllm.tools.sandbox', fake_lazyllm_tools_sandbox)
     monkeypatch.setitem(sys.modules, 'lazyllm.tools.sandbox.sandbox_base', fake_lazyllm_tools_sandbox_base)
     monkeypatch.setitem(sys.modules, 'tenacity', fake_tenacity)
@@ -180,7 +213,7 @@ def test_lazyllm_queue_db_path_is_path_like(monkeypatch):
 
 
 def test_agentic_forward_uses_automodel(monkeypatch):
-    # Verify agentic_forward calls AutoModel(model='llm', config=get_config_path()).
+    # Verify agentic_forward calls AutoModel(model='llm').
     # We use the fake-lazyllm module to isolate the test.
     module = _import_agentic_module(monkeypatch)
 
@@ -222,3 +255,49 @@ def test_agentic_forward_uses_automodel(monkeypatch):
     module.agentic_forward(query='hello', history=[])
 
     assert automodel_calls == ['model:llm']
+
+
+def test_handle_chat_constructs_react_agent_from_runtime_context(monkeypatch):
+    agent_calls = []
+
+    class FakeAgent:
+        def __init__(self, llm, tools, **kwargs):
+            agent_calls.append({'llm': llm, 'tools': tools, 'kwargs': kwargs})
+
+        def forward(self, query, llm_chat_history=None):
+            chat_service.lazyllm.FileSystemQueue().enqueue(json.dumps({'tag': 'text', 'delta': f'answer:{query}'}))
+            return {'text': f'final:{query}'}
+
+    monkeypatch.setattr(chat_service, 'AutoModel', lambda model, config: f'{model}:{config}')
+    monkeypatch.setattr(chat_service.lazyllm.tools.agent, 'ReactAgent', FakeAgent)
+
+    async def drive():
+        response = await chat_service.handle_chat(
+            query='hello',
+            history=[],
+            session_id='sid-1',
+            filters={},
+            files=None,
+            debug=False,
+            reasoning=False,
+            databases=None,
+            dataset='default',
+            priority=None,
+            available_tools=['calculator'],
+            available_skills=['skill-a'],
+            memory=None,
+            user_preference=None,
+            use_memory=True,
+            model_config={},
+        )
+        return await _collect_streaming_response(response)
+
+    body = asyncio.run(drive())
+
+    assert agent_calls
+    assert agent_calls[0]['llm'].startswith('llm:')
+    assert agent_calls[0]['tools']
+    assert agent_calls[0]['kwargs']['skills'] == ['skill-a']
+    assert agent_calls[0]['kwargs']['stream'] is True
+    assert 'answer:hello' in body
+    assert '"status": "FINISHED"' in body

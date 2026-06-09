@@ -47,6 +47,7 @@ import {
   confirmSkillDraft,
   createSkillAsset,
   discardSkillDraft,
+  enableBuiltinSkill,
   generateSkillDraft,
   getSkillAssetDetail,
   listIncomingSkillShares,
@@ -140,6 +141,7 @@ import {
   getBaseName,
   getPreferenceSuggestionResourceParam,
   getSkillSuggestionResourceParam,
+  getSkillBodyContentForDisplay,
   inferSkillFileExt,
   initialChangeProposals,
   initialSkills,
@@ -255,6 +257,7 @@ export default function MemoryManagement() {
   const [skillAssets, setSkillAssets] = useState<StructuredAsset[]>(initialSkills);
   const [skillLoading, setSkillLoading] = useState(false);
   const [skillAutoEvoLoading, setSkillAutoEvoLoading] = useState<Set<string>>(new Set());
+  const [builtinSkillEnableLoading, setBuiltinSkillEnableLoading] = useState<Set<string>>(new Set());
   const [skillsInitialized, setSkillsInitialized] = useState(false);
   const skillListRequestIdRef = useRef(0);
   const skillListRouteLocationKeyRef = useRef("");
@@ -437,7 +440,7 @@ export default function MemoryManagement() {
   const parentSkillOptions = useMemo(
     () =>
       topLevelSkills
-        .filter((item) => item.id !== draft.id)
+        .filter((item) => item.id !== draft.id && !item.isBuiltinTemplate)
         .map((item) => ({
           label: item.name,
           value: item.id,
@@ -674,6 +677,11 @@ export default function MemoryManagement() {
           suggestionStatus: item.suggestionStatus,
           nodeType: item.nodeType,
           updateStatus: item.updateStatus,
+          builtinSkillUid: item.builtinSkillUid,
+          originBuiltinSkillUid: item.originBuiltinSkillUid,
+          isBuiltinTemplate: item.isBuiltinTemplate,
+          activationStatus: item.activationStatus,
+          readonly: item.readonly,
         })),
       );
       if (!options.preserveChangeProposals) {
@@ -1407,28 +1415,12 @@ export default function MemoryManagement() {
       return "";
     }
 
-    const commonLabels = {
-      protect: t("admin.memoryProtect", { defaultValue: "保护" }),
-      content: t("admin.memoryContent"),
-      yes: t("admin.memoryDiffBoolYes"),
-      no: t("admin.memoryDiffBoolNo"),
-    };
-
     if (activeProposal.tab === "skills") {
-      return serializeStructuredAsset(activeProposal.before, {
-        name: t("admin.memoryName"),
-        description: t("admin.memoryDescription"),
-        category: t("admin.memoryCategory"),
-        tags: t("admin.memoryTagSet"),
-        ...commonLabels,
-      });
+      return getSkillBodyContentForDisplay(activeProposal.before.content);
     }
 
-    return serializeExperienceAsset(activeProposal.before, {
-      title: t("admin.memoryTitle"),
-      ...commonLabels,
-    });
-  }, [activeProposal, t]);
+    return activeProposal.before.content;
+  }, [activeProposal]);
   const backendDraftDiffLines = useMemo(
     () => buildUnifiedDiffLines(backendDraftPreview?.diff || ""),
     [backendDraftPreview?.diff],
@@ -3620,6 +3612,37 @@ export default function MemoryManagement() {
     });
   };
 
+  const handleEnableBuiltinSkill = useCallback(
+    async (item: StructuredAsset) => {
+      const builtinSkillUid = item.builtinSkillUid?.trim();
+      if (!builtinSkillUid) {
+        message.warning(t("admin.memoryBuiltinSkillMissing"));
+        return;
+      }
+
+      setBuiltinSkillEnableLoading((previous) => new Set(previous).add(builtinSkillUid));
+      try {
+        await enableBuiltinSkill(builtinSkillUid);
+        setSkillListPage(1);
+        await refreshSkillAssets({ page: 1 });
+        message.success(t("admin.memoryBuiltinSkillEnableSuccess"));
+      } catch (error) {
+        console.error("Enable builtin skill failed:", error);
+        message.error(
+          getLocalizedErrorMessage(error, t("admin.memoryBuiltinSkillEnableFailed")) ||
+            t("admin.memoryBuiltinSkillEnableFailed"),
+        );
+      } finally {
+        setBuiltinSkillEnableLoading((previous) => {
+          const next = new Set(previous);
+          next.delete(builtinSkillUid);
+          return next;
+        });
+      }
+    },
+    [refreshSkillAssets, t],
+  );
+
   const handleBatchDeleteGlossary = () => {
     if (!selectedGlossaryAssets.length) {
       message.info(t("admin.memoryGlossaryBatchSelectFirst"));
@@ -4038,7 +4061,6 @@ export default function MemoryManagement() {
               childPayloads = draft.childSkills.map((child) => ({
                 name: child.name.trim(),
                 description: child.description.trim(),
-                tags: normalizeTagValues(child.tags),
                 content: child.content.trim(),
                 file_ext: inferSkillFileExt(undefined, child.content),
                 is_locked: Boolean(payload.protect),
@@ -4501,9 +4523,13 @@ export default function MemoryManagement() {
             : null;
 
         return (
-          <div className="memory-table-main">
+          <div
+            className={`memory-table-main ${
+              record.isBuiltinTemplate ? "is-builtin-template" : ""
+            }`}
+          >
             <div className="memory-table-main-title">
-              {activeTab === "skills" ? (
+              {activeTab === "skills" && !record.isBuiltinTemplate ? (
                 <button
                   type="button"
                   className="memory-term-link"
@@ -4511,9 +4537,16 @@ export default function MemoryManagement() {
                 >
                   {record.name}
                 </button>
+              ) : activeTab === "skills" ? (
+                <span className="memory-term-link is-disabled">{record.name}</span>
               ) : (
                 <span>{record.name}</span>
               )}
+              {activeTab === "skills" && record.isBuiltinTemplate ? (
+                <Tag color="default">{t("admin.memoryBuiltinSkillTemplateTag")}</Tag>
+              ) : record.originBuiltinSkillUid ? (
+                <Tag color="blue">{t("admin.memoryBuiltinSkillEnabledTag")}</Tag>
+              ) : null}
               {autoEvoStatusMeta ? (
                 <Tag color={autoEvoStatusMeta.color}>{autoEvoStatusMeta.text}</Tag>
               ) : null}
@@ -4587,6 +4620,13 @@ export default function MemoryManagement() {
       key: "autoEvo",
       width: 90,
       render: (_value, record) => {
+        if (activeTab === "skills" && record.parentId) {
+          return "-";
+        }
+        if (activeTab === "skills" && record.isBuiltinTemplate) {
+          return "-";
+        }
+
         const disabledByRemoveSuggestion =
           activeTab === "skills" && Boolean(record.hasPendingRemoveSuggestion);
         const switchNode = (
@@ -4636,6 +4676,8 @@ export default function MemoryManagement() {
       width: 250,
       fixed: "right",
       render: (_value, record) => {
+        const isChildSkill = activeTab === "skills" && Boolean(record.parentId);
+        const isBuiltinTemplate = activeTab === "skills" && Boolean(record.isBuiltinTemplate);
         const pendingProposal =
           activeTab === "skills" ? getPendingProposal("skills", record.id) : undefined;
         const hasBackendReviewableSuggestions =
@@ -4658,6 +4700,20 @@ export default function MemoryManagement() {
 
         return (
           <Space size={4}>
+            {isBuiltinTemplate && !record.parentId ? (
+              <Button
+                type="primary"
+                size="small"
+                loading={
+                  record.builtinSkillUid
+                    ? builtinSkillEnableLoading.has(record.builtinSkillUid)
+                    : false
+                }
+                onClick={() => void handleEnableBuiltinSkill(record)}
+              >
+                {t("admin.memoryBuiltinSkillEnable")}
+              </Button>
+            ) : null}
             {activeTab !== "skills" ? (
               <Tooltip title={t("admin.memoryViewItem")}>
                 <Button
@@ -4667,19 +4723,21 @@ export default function MemoryManagement() {
                 />
               </Tooltip>
             ) : null}
-            {activeTab !== "tools" ? (
+            {activeTab !== "tools" && !isBuiltinTemplate ? (
               <>
-                <Tooltip title={reviewTooltip}>
-                  <Button
-                    type="text"
-                    icon={<HistoryOutlined />}
-                    loading={reviewSuggestionLoadingId === record.id}
-                    disabled={!canReviewChange}
-                    onClick={() =>
-                      void openChangeReview("skills", record.id, record.updateStatus)
-                    }
-                  />
-                </Tooltip>
+                {!isChildSkill ? (
+                  <Tooltip title={reviewTooltip}>
+                    <Button
+                      type="text"
+                      icon={<HistoryOutlined />}
+                      loading={reviewSuggestionLoadingId === record.id}
+                      disabled={!canReviewChange}
+                      onClick={() =>
+                        void openChangeReview("skills", record.id, record.updateStatus)
+                      }
+                    />
+                  </Tooltip>
+                ) : null}
                 <Tooltip title={t("admin.memoryEditItem")}>
                   <Button
                     type="text"

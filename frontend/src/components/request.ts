@@ -23,14 +23,33 @@ function processQueue(newToken: string) {
 }
 
 function applyOptionalAuthHeader(config: any) {
-  const token = AgentAppsAuth.getAccessToken();
+  const authHeaders = AgentAppsAuth.getAuthHeaders();
   config.headers = config.headers ?? {};
 
-  if (token) {
+  if (authHeaders.authorization) {
     if (!config.headers.Authorization && !config.headers.authorization) {
-      config.headers.authorization = `Bearer ${token}`;
+      config.headers.authorization = authHeaders.authorization;
     }
-    return config;
+  }
+
+  if (authHeaders["X-User-Id"]) {
+    if (
+      !config.headers["X-User-Id"] &&
+      !config.headers["X-User-ID"] &&
+      !config.headers["x-user-id"]
+    ) {
+      config.headers["X-User-Id"] = authHeaders["X-User-Id"];
+    }
+  }
+
+  if (authHeaders["X-Tenant-ID"]) {
+    if (
+      !config.headers["X-Tenant-ID"] &&
+      !config.headers["X-Tenant-Id"] &&
+      !config.headers["x-tenant-id"]
+    ) {
+      config.headers["X-Tenant-ID"] = authHeaders["X-Tenant-ID"];
+    }
   }
 
   if (config.headers.Authorization === "Bearer undefined") {
@@ -133,6 +152,15 @@ export function getLocalizedErrorMessage(
   }
 
   return extractRawErrorMessage(error) || fallback;
+}
+
+/** Resolve a core error code (e.g. err_msg "2000725") via errors.{code} i18n. */
+export function localizeErrorCode(code?: string, fallback = ""): string {
+  const normalized = String(code ?? "").trim();
+  if (normalized && i18n.exists(`errors.${normalized}`)) {
+    return i18n.t(`errors.${normalized}`);
+  }
+  return normalized || fallback;
 }
 
 function isRefreshEndpoint(url?: string): boolean {

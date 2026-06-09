@@ -7,7 +7,7 @@ import { getLocalizedErrorMessage } from "@/components/request";
 import RouteLoading from "../../components/RouteLoading";
 import { useMemoryManagementOutletContext } from "../../context";
 import { getSkillAssetDetail, patchSkillAsset } from "../../skillApi";
-import type { StructuredAsset } from "../../shared";
+import { getSkillBodyContentForDisplay, type StructuredAsset } from "../../shared";
 
 const markdownExtensions = new Set(["md", "markdown"]);
 
@@ -24,29 +24,8 @@ const isMarkdownSkill = (asset: StructuredAsset) => {
   return markdownExtensions.has(ext) || hasMarkdownShape(asset.content || "");
 };
 
-const META_LINE_REGEX = /^\s*(?:\*\*)?\s*(name|description)\s*(?:\*\*)?\s*[:：][^\n]*$/gim;
-
 const stripLeadingMetaLines = (content: string) => {
-  if (!content) {
-    return "";
-  }
-  return content
-    .replace(/^\s*---\s*[\r\n]+/, "")
-    .replace(META_LINE_REGEX, "")
-    .replace(/^(?:\s*---\s*[\r\n]+)+/, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .replace(/^\s+/, "");
-};
-
-const composeContentWithMeta = (params: {
-  body: string;
-  name: string;
-  description?: string;
-}) => {
-  const { body, name, description = "" } = params;
-  const cleanedBody = stripLeadingMetaLines(body).trim();
-  const header = [`name: ${name}`, `description: ${description}`].join("\n");
-  return cleanedBody ? `${header}\n\n${cleanedBody}` : `${header}\n`;
+  return getSkillBodyContentForDisplay(content);
 };
 
 export default function MemorySkillDetailPage() {
@@ -77,6 +56,7 @@ export default function MemorySkillDetailPage() {
     [itemId, skillAssets],
   );
   const skill = detail || cachedSkill;
+  const canEditSkillDetail = Boolean(skill) && !skill?.readonly && !skill?.isBuiltinTemplate;
   const renderAsMarkdown = skill ? isMarkdownSkill(skill) : false;
   const previewContent = useMemo(
     () => stripLeadingMetaLines(skill?.content || ""),
@@ -158,17 +138,23 @@ export default function MemorySkillDetailPage() {
   }
 
   const handleStartInlineEdit = () => {
-    setInlineContentDraft(stripLeadingMetaLines(skill?.content || ""));
+    if (!canEditSkillDetail) {
+      return;
+    }
+    setInlineContentDraft(skill?.content || "");
     setIsInlineEditing(true);
   };
 
   const handleCancelInlineEdit = () => {
-    setInlineContentDraft(stripLeadingMetaLines(skill?.content || ""));
+    setInlineContentDraft(skill?.content || "");
     setIsInlineEditing(false);
   };
 
   const handleSaveInlineEdit = async () => {
     if (!skill) {
+      return;
+    }
+    if (!canEditSkillDetail) {
       return;
     }
 
@@ -177,20 +163,14 @@ export default function MemorySkillDetailPage() {
     }
 
     const trimmedDraft = inlineContentDraft.trim();
-    if (trimmedDraft === stripLeadingMetaLines(skill.content || "").trim()) {
+    if (trimmedDraft === (skill.content || "").trim()) {
       setIsInlineEditing(false);
       return;
     }
 
-    const nextContent = composeContentWithMeta({
-      body: inlineContentDraft,
-      name: skill.name || "",
-      description: skill.description || "",
-    });
-
     const patchPayload: Record<string, unknown> = {
       name: skill.name,
-      content: nextContent,
+      content: inlineContentDraft,
       description: skill.description,
       tags: skill.tags,
       is_locked: Boolean(skill.protect),
@@ -213,7 +193,7 @@ export default function MemorySkillDetailPage() {
           previous
             ? {
                 ...previous,
-                content: nextContent,
+                content: inlineContentDraft,
               }
             : previous,
         );
@@ -231,8 +211,11 @@ export default function MemorySkillDetailPage() {
     }
   };
 
+  const contentForPatch = (asset: StructuredAsset) =>
+    asset.parentId ? asset.content || "" : stripLeadingMetaLines(asset.content || "");
+
   const handleStartTitleEdit = () => {
-    if (!skill || titleSaving) {
+    if (!skill || !canEditSkillDetail) {
       return;
     }
     setTitleDraft(skill.name || "");
@@ -245,34 +228,27 @@ export default function MemorySkillDetailPage() {
   };
 
   const handleSaveTitleEdit = async () => {
-    if (!skill || titleSaving) {
+    if (!skill || !canEditSkillDetail || titleSaving) {
       return;
     }
-
     const nextName = titleDraft.trim();
     if (!nextName) {
-      message.warning(t("admin.memoryTitleCol"));
+      message.warning(`${t("common.pleaseInput")}${t("admin.memoryName")}`);
       return;
     }
-
-    if (nextName === (skill.name || "").trim()) {
+    if (nextName === skill.name) {
       setIsTitleEditing(false);
       return;
     }
 
     const patchPayload: Record<string, unknown> = {
       name: nextName,
-      content: composeContentWithMeta({
-        body: skill.content || "",
-        name: nextName,
-        description: skill.description || "",
-      }),
-      description: skill.description || "",
+      description: skill.description,
       tags: skill.tags,
-      is_locked: Boolean(skill.protect),
+      content: contentForPatch(skill),
       file_ext: skill.fileExt || "md",
+      is_locked: Boolean(skill.protect),
     };
-
     if (!skill.parentId) {
       patchPayload.category = skill.category;
       patchPayload.is_enabled = skill.isEnabled ?? true;
@@ -284,21 +260,12 @@ export default function MemorySkillDetailPage() {
       const latestDetail = await getSkillAssetDetail(skill.id);
       if (latestDetail) {
         setDetail(latestDetail);
-      } else {
-        setDetail((previous) =>
-          previous
-            ? {
-                ...previous,
-                name: nextName,
-              }
-            : previous,
-        );
       }
       await refreshSkillAssets();
       setIsTitleEditing(false);
       message.success(t("common.saveSuccess"));
     } catch (error) {
-      console.error("Save skill detail title failed:", error);
+      console.error("Save skill title failed:", error);
       message.error(
         getLocalizedErrorMessage(error, t("common.saveFailed")) || t("common.saveFailed"),
       );
@@ -308,7 +275,7 @@ export default function MemorySkillDetailPage() {
   };
 
   const handleStartDescriptionEdit = () => {
-    if (!skill || descriptionSaving) {
+    if (!skill || !canEditSkillDetail) {
       return;
     }
     setDescriptionDraft(skill.description || "");
@@ -321,29 +288,27 @@ export default function MemorySkillDetailPage() {
   };
 
   const handleSaveDescriptionEdit = async () => {
-    if (!skill || descriptionSaving) {
+    if (!skill || !canEditSkillDetail || descriptionSaving) {
       return;
     }
-
     const nextDescription = descriptionDraft.trim();
-    if (nextDescription === (skill.description || "").trim()) {
+    if (!nextDescription) {
+      message.warning(`${t("common.pleaseInput")}${t("admin.memoryDescription")}`);
+      return;
+    }
+    if (nextDescription === skill.description) {
       setIsDescriptionEditing(false);
       return;
     }
 
     const patchPayload: Record<string, unknown> = {
-      name: skill.name || "",
-      content: composeContentWithMeta({
-        body: skill.content || "",
-        name: skill.name || "",
-        description: nextDescription,
-      }),
+      name: skill.name,
       description: nextDescription,
       tags: skill.tags,
-      is_locked: Boolean(skill.protect),
+      content: contentForPatch(skill),
       file_ext: skill.fileExt || "md",
+      is_locked: Boolean(skill.protect),
     };
-
     if (!skill.parentId) {
       patchPayload.category = skill.category;
       patchPayload.is_enabled = skill.isEnabled ?? true;
@@ -355,21 +320,12 @@ export default function MemorySkillDetailPage() {
       const latestDetail = await getSkillAssetDetail(skill.id);
       if (latestDetail) {
         setDetail(latestDetail);
-      } else {
-        setDetail((previous) =>
-          previous
-            ? {
-                ...previous,
-                description: nextDescription,
-              }
-            : previous,
-        );
       }
       await refreshSkillAssets();
       setIsDescriptionEditing(false);
       message.success(t("common.saveSuccess"));
     } catch (error) {
-      console.error("Save skill detail description failed:", error);
+      console.error("Save skill description failed:", error);
       message.error(
         getLocalizedErrorMessage(error, t("common.saveFailed")) || t("common.saveFailed"),
       );
@@ -411,7 +367,7 @@ export default function MemorySkillDetailPage() {
             <div
               className={`memory-skill-detail-title-copy${isTitleEditing ? " is-editing" : ""}`}
             >
-              {isTitleEditing ? (
+              {isTitleEditing && canEditSkillDetail ? (
                 <div
                   className="memory-skill-detail-title-editor"
                   onBlur={(event) => {
@@ -439,14 +395,18 @@ export default function MemorySkillDetailPage() {
                 </div>
               ) : (
                 <>
-                  <button
-                    type="button"
-                    className="memory-skill-detail-title-trigger"
-                    onClick={handleStartTitleEdit}
-                  >
+                  {canEditSkillDetail ? (
+                    <button
+                      type="button"
+                      className="memory-skill-detail-title-trigger"
+                      onClick={handleStartTitleEdit}
+                    >
+                      <h3>{skill.name}</h3>
+                    </button>
+                  ) : (
                     <h3>{skill.name}</h3>
-                  </button>
-                  {isDescriptionEditing ? (
+                  )}
+                  {isDescriptionEditing && canEditSkillDetail ? (
                     <div
                       className="memory-skill-detail-description-editor"
                       onBlur={(event) => {
@@ -472,7 +432,7 @@ export default function MemorySkillDetailPage() {
                         className="memory-skill-detail-description-input"
                       />
                     </div>
-                  ) : (
+                  ) : canEditSkillDetail ? (
                     <button
                       type="button"
                       className="memory-skill-detail-description-trigger"
@@ -480,6 +440,8 @@ export default function MemorySkillDetailPage() {
                     >
                       <p>{skill.description || "-"}</p>
                     </button>
+                  ) : (
+                    <p>{skill.description || "-"}</p>
                   )}
                 </>
               )}
@@ -508,16 +470,13 @@ export default function MemorySkillDetailPage() {
             </div>
           ) : null}
 
-          <div className="memory-skill-detail-body">
+          <div className="memory-form-field memory-form-field-full">
             <div className="memory-skill-detail-editor-toolbar">
-              <div className="memory-skill-detail-editor-heading">
-                <label>
-                  {renderAsMarkdown
-                    ? t("admin.memorySkillDetailMarkdownPreview")
-                    : t("admin.memorySkillDetailPlainPreview")}
-                </label>
-                <span>{t("admin.memorySkillDetailInlineEditHint")}</span>
-              </div>
+              <label>
+                {renderAsMarkdown
+                  ? t("admin.memorySkillDetailMarkdownPreview")
+                  : t("admin.memorySkillDetailPlainPreview")}
+              </label>
               <Space size={8}>
                 {isInlineEditing ? (
                   <>
@@ -532,21 +491,14 @@ export default function MemorySkillDetailPage() {
                       {t("common.save")}
                     </Button>
                   </>
-                ) : (
+                ) : canEditSkillDetail ? (
                   <Button onClick={handleStartInlineEdit}>
                     {t("common.edit")}
                   </Button>
-                )}
+                ) : null}
               </Space>
             </div>
-            <div
-              className={`memory-skill-detail-content${!isInlineEditing ? " is-clickable" : ""}`}
-              onClick={() => {
-                if (!isInlineEditing) {
-                  handleStartInlineEdit();
-                }
-              }}
-            >
+            <div className="memory-skill-detail-content">
               {isInlineEditing ? (
                 <Input.TextArea
                   value={inlineContentDraft}
@@ -555,7 +507,7 @@ export default function MemorySkillDetailPage() {
                   className="memory-skill-detail-textarea"
                 />
               ) : renderAsMarkdown ? (
-                <MarkdownViewer>{previewContent || ""}</MarkdownViewer>
+                <MarkdownViewer>{skill.content || ""}</MarkdownViewer>
               ) : (
                 <pre>{previewContent || "-"}</pre>
               )}

@@ -1,4 +1,5 @@
 import {
+  Alert,
   message,
   Button,
   Badge,
@@ -49,7 +50,7 @@ import ImportTaskManage, {
   IImportTaskManageRef,
 } from "./components/ImportTaskManage";
 import TreeUtils from "@/modules/knowledge/utils/tree";
-import { IMPORT_TASK_POLL_INTERVAL } from "@/modules/knowledge/constants/common";
+import { IMPORT_TASK_POLL_INTERVAL, IMPORT_TASK_RUNNING_STATES } from "@/modules/knowledge/constants/common";
 import ConfirmModal, {
   ConfirmImperativeProps,
 } from "@/modules/knowledge/components/ConfirmModal";
@@ -82,10 +83,11 @@ const Detail = () => {
   const createUpdateRef = useRef<UpdateImperativeProps>(null);
 
   const [detail, setDetail] = useState<Dataset>();
-  const [importingTotal, setImportingTotal] = useState(0);
+  const [runningTotal, setRunningTotal] = useState(0);
   const [developerActive, setDeveloperActive] = useState(isDeveloperModeActive);
   const [embeddingReady, setEmbeddingReady] = useState<boolean | null>(null);
   const [multimodalEmbeddingReady, setMultimodalEmbeddingReady] = useState<boolean | null>(null);
+  const [uploadingNoticeVisible, setUploadingNoticeVisible] = useState(false);
   const isAdmin = AgentAppsAuth.getUserInfo()?.role === 'system-admin';
 
   const { id = "" } = useParams();
@@ -99,8 +101,9 @@ const Detail = () => {
     KnowledgeBaseServiceApi()
       .datasetServiceGetDataset({ dataset: id })
       .then((res) => {
-        setDetail(res.data);
-        setCurrentDataset(res.data);
+        const dataset = res.data as unknown as Dataset;
+        setDetail(dataset);
+        setCurrentDataset(dataset);
       });
   }, [id, setCurrentDataset]);
 
@@ -186,16 +189,22 @@ const Detail = () => {
       interval: IMPORT_TASK_POLL_INTERVAL,
       request: () => TaskServiceApi().listTasks(id),
       onSuccess: ({ data = {} }) => {
-        const RUNNING_STATES = ["WAITING", "WORKING"];
+        const RUNNING_STATES = IMPORT_TASK_RUNNING_STATES;
         const allTasks = data.tasks || [];
         const newTaskList = allTasks.filter((t: any) =>
           RUNNING_STATES.includes(t.task_state),
         );
+        // Tasks in WORKING state are actively being parsed by the algorithm service.
+        // Tasks in WAITING state are still uploading / queued before parsing starts.
+        const uploadingTasks = newTaskList.filter((t: any) => t.task_state === 'WAITING');
         if (newTaskList.length === 0) {
           pollingRef.current.cancel();
         }
         compareTaskChange(newTaskList, importingTaskListRef.current);
-        setImportingTotal(newTaskList.length);
+        setRunningTotal(newTaskList.length);
+        // Show notice only while files are still uploading; once upload is done
+        // the user can safely close the tab even if parsing continues in the background.
+        setUploadingNoticeVisible(uploadingTasks.length > 0);
         importingTaskListRef.current = newTaskList;
       },
     });
@@ -423,6 +432,14 @@ const Detail = () => {
           }
         }}
       />
+      {uploadingNoticeVisible && (
+        <Alert
+          className="knowledge-parsing-notice"
+          message={t("knowledge.documentUploadingKeepTabOpen")}
+          type="warning"
+          showIcon
+        />
+      )}
       <div className="toolbar my-4 mt-6 w-full">
         <Search
           className="search-input"
@@ -477,7 +494,7 @@ const Detail = () => {
                 {t("knowledge.createFolder")}
               </Button>
             )}
-            <Badge count={importingTotal} size="small" style={{ zIndex: 2 }}>
+            <Badge count={runningTotal} size="small" style={{ zIndex: 2 }}>
               <Space.Compact>
                 <Tooltip title={
                   (embeddingReady === false || multimodalEmbeddingReady === false)
@@ -534,19 +551,19 @@ const Detail = () => {
                         label: (
                           <>
                             {t("knowledge.taskManageParse")}
-                            {importingTotal > 0 && (
+                            {runningTotal > 0 && (
                               <Badge
-                                count={importingTotal}
+                                count={runningTotal}
                                 size="small"
                                 offset={[-4, 6]}
                               >
                                 <span
                                   style={{
-                                    marginLeft: importingTotal >= 10 ? 6 : 12,
+                                    marginLeft: runningTotal >= 10 ? 6 : 12,
                                     opacity: 0,
                                   }}
                                 >
-                                  {importingTotal}
+                                  {runningTotal}
                                 </span>
                               </Badge>
                             )}
@@ -659,6 +676,8 @@ const Detail = () => {
 
       <ImportKnowledgeModal
         ref={importKnowledgeRef}
+        onParsingStart={() => setParsingNoticeVisible(true)}
+        onParsingSettled={() => setParsingNoticeVisible(false)}
         onOk={({ pId } = {}) => {
           importingTaskListRef.current = [];
           getImportingTotal();

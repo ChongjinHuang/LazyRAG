@@ -81,6 +81,7 @@ endif
 _LAZYMIND_FW_WATCH_HOST_DIR_RAW := $(LAZYMIND_FILE_WATCHER_WATCH_HOST_DIR)
 _LAZYMIND_FW_WATCH_HOST_DIR_ABS := $(abspath $(_LAZYMIND_FW_WATCH_HOST_DIR_RAW))
 override LAZYMIND_FILE_WATCHER_WATCH_HOST_DIR := $(if $(filter windows,$(LAZYMIND_FILE_WATCHER_HOST_PATH_STYLE)),$(_LAZYMIND_FW_WATCH_HOST_DIR_RAW),$(_LAZYMIND_FW_WATCH_HOST_DIR_ABS))
+export SCAN_CONTROL_PLANE_LOCAL_FS_PUBLIC_ROOT := $(LAZYMIND_FILE_WATCHER_WATCH_HOST_DIR)
 LAZYMIND_FILE_WATCHER_DIR := backend/file-watcher
 LAZYMIND_FILE_WATCHER_BIN := $(LAZYMIND_FILE_WATCHER_DIR)/file_watcher
 LAZYMIND_FILE_WATCHER_CONFIG := $(LAZYMIND_FILE_WATCHER_DIR)/configs/agent.yaml
@@ -127,6 +128,7 @@ export LAZYMIND_ENABLE_OPENSEARCH_DASHBOARD ?= $(LAZYMIND_ENABLE_STORE_DASHBOARD
 # Chat tuning
 export LAZYMIND_MAX_CONCURRENCY ?= 10
 export LAZYMIND_LLM_PRIORITY ?= 0
+export LAZYMIND_ENABLE_ROUTER ?= false
 
 # Tracing (set LAZYLLM_TRACE_ENABLED=0 to disable; requires LANGFUSE_* keys when enabled)
 export LAZYLLM_TRACE_ENABLED ?= 1
@@ -138,17 +140,15 @@ export MINIO_SECRET_KEY ?= minioadmin
 
 # Pluggable parent images for the algorithm Dockerfile's multi-stage chain:
 #
-#   FROM ${BASE_LAZYLLM_IMAGE}  AS base_lazymind    # adds `lazyllm install rag`
-#   FROM ${BASE_LAZYMIND_IMAGE}  AS algorithm       # adds algorithm code + reqs
+#   FROM ${BASE_LAZYLLM_IMAGE}  AS mineru     # base_env: apt + lazyllm[rag] + requirements, no code
+#   FROM ${BASE_LAZYMIND_IMAGE} AS base_code  # base_code: base_env + COPY lazyllm + algorithm code
 #
-# Defaults wire up the in-tree chain: base -> base_lazymind -> algorithm.
-# Override either variable with an external prebuilt image tag to skip the
-# corresponding stage's heavy build (useful for CI cache reuse), e.g.:
-#   BASE_LAZYMIND_IMAGE=registry.example.com/lazymind/base_lazymind:latest
-# Or set BASE_LAZYMIND_IMAGE=base to skip the rag install layer entirely for
-# fast dev builds when RAG extras are not needed.
-export BASE_LAZYLLM_IMAGE ?= base
-export BASE_LAZYMIND_IMAGE ?= base_lazymind
+# Defaults wire up the in-tree chain: base_env -> base_code -> algorithm.
+# Override with an external prebuilt image tag to skip heavy build stages
+# (useful for CI cache reuse), e.g.:
+#   BASE_LAZYMIND_IMAGE=registry.example.com/lazymind/base_code:latest
+export BASE_LAZYLLM_IMAGE ?= base_env
+export BASE_LAZYMIND_IMAGE ?= base_code
 # export BASE_LAZYMIND_IMAGE ?= registry.cn-sh-01.sensecore.cn/ai-expert-service/lazymind-base:2026.05.15.beta
 
 # model config path

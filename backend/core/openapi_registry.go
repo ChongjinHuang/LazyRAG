@@ -8,6 +8,7 @@ import (
 
 	"lazymind/core/chat"
 	"lazymind/core/doc"
+	"lazymind/core/evalset"
 	"lazymind/core/modelprovider"
 	"lazymind/core/wordgroup"
 )
@@ -459,13 +460,16 @@ type listWordGroupsQueryParams struct {
 }
 
 type listUserModelProvidersQueryParams struct {
-	Keyword string `query:"keyword"`
+	Category        string `query:"category"`
+	ExcludeCategory string `query:"exclude_category"`
+	Keyword         string `query:"keyword"`
 }
 
 type checkModelProviderOpenAPIRequest struct {
 	ProviderName string `json:"provider_name"`
 	BaseURL      string `json:"base_url"`
 	APIKey       string `json:"api_key"`
+	DryRun       bool   `json:"dry_run"`
 }
 
 type modelProviderGroupPathParams struct {
@@ -481,19 +485,22 @@ type updateModelProviderGroupOpenAPIRequest struct {
 	Name    string `json:"name"`
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key,omitempty"`
+	Verify  bool   `json:"verify"`
 }
 
 type createModelProviderGroupOpenAPIRequest struct {
 	Name    string `json:"name"`
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key,omitempty"`
+	Verify  bool   `json:"verify"`
 }
 
 type createModelProviderGroupOpenAPIResponse struct {
-	ID                  string `json:"id"`
-	UserModelProviderID string `json:"user_model_provider_id"`
-	Name                string `json:"name"`
-	BaseURL             string `json:"base_url"`
+	ID                  string                                `json:"id"`
+	UserModelProviderID string                                `json:"user_model_provider_id"`
+	Name                string                                `json:"name"`
+	BaseURL             string                                `json:"base_url"`
+	Check               *modelprovider.CheckModelProviderData `json:"check,omitempty"`
 }
 
 type deleteModelProviderGroupOpenAPIResponse struct {
@@ -538,7 +545,7 @@ type listUserModelsByModelTypeQueryParams struct {
 }
 
 type selectedModelOpenAPIItem struct {
-	ModelType                string `json:"model_type"`
+	ModelKey                 string `json:"model_key"`
 	ModelID                  string `json:"model_id"`
 	UserModelProviderID      string `json:"user_model_provider_id"`
 	UserModelProviderGroupID string `json:"user_model_provider_group_id"`
@@ -553,8 +560,8 @@ type listSelectedModelsOpenAPIResponse struct {
 }
 
 type setSelectedModelOpenAPIItem struct {
-	ModelType string `json:"model_type"`
-	ModelID   string `json:"model_id"`
+	ModelKey string `json:"model_key"`
+	ModelID  string `json:"model_id"`
 }
 
 type setSelectedModelsOpenAPIRequest struct {
@@ -571,12 +578,69 @@ type deleteModelProviderGroupModelOpenAPIResponse struct {
 	ID string `json:"id"`
 }
 
+type verifiedProviderQueryParams struct {
+	Category string `query:"category"`
+}
+
+type verifiedProviderGroupOpenAPIItem struct {
+	GroupID             string `json:"group_id"`
+	UserModelProviderID string `json:"user_model_provider_id"`
+	ProviderName        string `json:"provider_name"`
+	GroupName           string `json:"group_name"`
+	BaseURL             string `json:"base_url"`
+	Category            string `json:"category"`
+}
+
+type verifiedProviderOpenAPIResponse struct {
+	Ready        bool   `json:"ready"`
+	Source       string `json:"source,omitempty"`
+	SharedByName string `json:"shared_by_name,omitempty"`
+	SharedByID   string `json:"shared_by_id,omitempty"`
+	ProviderName string `json:"provider_name,omitempty"`
+	GroupName    string `json:"group_name,omitempty"`
+}
+
+type verifiedProviderGroupsOpenAPIResponse struct {
+	Groups []verifiedProviderGroupOpenAPIItem `json:"groups"`
+}
+
+type setSelectedProviderOpenAPIRequest struct {
+	Selections []setSelectedProviderOpenAPIItem `json:"selections"`
+}
+
+type setSelectedProviderOpenAPIItem struct {
+	Category string `json:"category"`
+	GroupID  string `json:"group_id"`
+}
+
+type selectedProviderOpenAPIItem struct {
+	Category            string `json:"category"`
+	GroupID             string `json:"group_id"`
+	UserModelProviderID string `json:"user_model_provider_id"`
+	ProviderName        string `json:"provider_name"`
+	GroupName           string `json:"group_name"`
+	BaseURL             string `json:"base_url"`
+	Share               bool   `json:"share"`
+}
+
+type selectedProvidersOpenAPIResponse struct {
+	Selections []selectedProviderOpenAPIItem `json:"selections"`
+}
+
+type setSharedProviderOpenAPIRequest struct {
+	GroupID string `json:"group_id"`
+	Share   bool   `json:"share"`
+}
+
 type userModelProviderOpenAPIItem struct {
-	ID                     string `json:"id"`
-	DefaultModelProviderID string `json:"default_model_provider_id"`
-	Name                   string `json:"name"`
-	Description            string `json:"description"`
-	BaseURL                string `json:"base_url"`
+	ID                     string   `json:"id"`
+	DefaultModelProviderID string   `json:"default_model_provider_id"`
+	Name                   string   `json:"name"`
+	Description            string   `json:"description"`
+	BaseURL                string   `json:"base_url"`
+	Category               string   `json:"category"`
+	IsConfigured           bool     `json:"is_configured"`
+	Capabilities           []string `json:"capabilities"`
 }
 
 type listUserModelProvidersOpenAPIResponse struct {
@@ -1029,9 +1093,17 @@ type internalSkillRemoveOpenAPIRequest struct {
 	Reason    string `json:"reason,omitempty"`
 }
 
+type evalSetImportPreviewOpenAPIRequest struct {
+	File     string `json:"file" required:"true"`
+	FileType string `json:"file_type,omitempty"`
+}
+
 func registeredCoreOperations() []openAPIOperation {
 	jsonBodyOf := func(v any, required bool) *openAPIBody {
 		return &openAPIBody{Required: required, ContentType: "application/json", Schema: schemaSource{Type: v}}
+	}
+	multipartBodyOf := func(v any, required bool) *openAPIBody {
+		return &openAPIBody{Required: required, ContentType: "multipart/form-data", Schema: schemaSource{Type: v}}
 	}
 	resp := func(description string, v any) openAPIResponse {
 		return openAPIResponse{Description: description, ContentType: "application/json", Schema: schemaSource{Type: v}}
@@ -1102,6 +1174,153 @@ func registeredCoreOperations() []openAPIOperation {
 		},
 		{
 			Method:      "GET",
+			Path:        "/eval-sets",
+			Summary:     "List eval sets",
+			Tags:        []string{"eval-sets"},
+			QueryParams: evalset.ListEvalSetsQuery{},
+			Responses:   map[int]openAPIResponse{200: resp("Eval set list", evalset.ListEvalSetsResponse{})},
+		},
+		{
+			Method:      "POST",
+			Path:        "/eval-sets",
+			Summary:     "Create eval set",
+			Tags:        []string{"eval-sets"},
+			RequestBody: jsonBodyOf(evalset.CreateEvalSetRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Created eval set", evalset.EvalSetResponse{})},
+		},
+		{
+			Method:    "GET",
+			Path:      "/eval-sets/datasets",
+			Summary:   "List eval set dataset options",
+			Tags:      []string{"eval-sets"},
+			Responses: map[int]openAPIResponse{200: resp("Dataset options", evalset.DatasetOptionsResponse{})},
+		},
+		{
+			Method:    "GET",
+			Path:      "/eval-sets/question-types",
+			Summary:   "List eval set question type options",
+			Tags:      []string{"eval-sets"},
+			Responses: map[int]openAPIResponse{200: resp("Question type options", evalset.QuestionTypeOptionsResponse{})},
+		},
+		{
+			Method:     "GET",
+			Path:       "/eval-set-import-templates/{file_type}",
+			Summary:    "Download eval set import template",
+			Tags:       []string{"eval-set-imports"},
+			PathParams: evalset.ImportTemplatePathParams{},
+			Responses: map[int]openAPIResponse{200: {
+				Description: "Import template file",
+				ContentType: "application/octet-stream",
+				Schema: schemaSource{Inline: map[string]any{
+					"type":   "string",
+					"format": "binary",
+				}},
+			}},
+		},
+		{
+			Method:      "POST",
+			Path:        "/eval-sets/imports:preview",
+			Summary:     "Preview eval set import",
+			Tags:        []string{"eval-set-imports"},
+			RequestBody: multipartBodyOf(evalSetImportPreviewOpenAPIRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Eval set import preview", evalset.ImportPreviewResponse{})},
+		},
+		{
+			Method:      "POST",
+			Path:        "/eval-sets:import",
+			Summary:     "Create eval set by import",
+			Tags:        []string{"eval-set-imports"},
+			RequestBody: jsonBodyOf(evalset.CreateEvalSetByImportRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Created eval set import task", evalset.CreateEvalSetByImportResponse{})},
+		},
+		{
+			Method:     "GET",
+			Path:       "/eval-set-import-tasks/{task_id}",
+			Summary:    "Get eval set import task",
+			Tags:       []string{"eval-set-imports"},
+			PathParams: evalset.EvalSetImportTaskPathParams{},
+			Responses:  map[int]openAPIResponse{200: resp("Eval set import task", evalset.EvalSetImportTaskResponse{})},
+		},
+		{
+			Method:      "GET",
+			Path:        "/eval-sets/{eval_set_id}/items",
+			Summary:     "List eval set items",
+			Tags:        []string{"eval-set-items"},
+			PathParams:  evalset.EvalSetPathParams{},
+			QueryParams: evalset.ListEvalSetItemsQuery{},
+			Responses:   map[int]openAPIResponse{200: resp("Eval set item list", evalset.ListEvalSetItemsResponse{})},
+		},
+		{
+			Method:      "POST",
+			Path:        "/eval-sets/{eval_set_id}/imports",
+			Summary:     "Append eval set import",
+			Tags:        []string{"eval-set-imports"},
+			PathParams:  evalset.EvalSetPathParams{},
+			RequestBody: jsonBodyOf(evalset.AppendEvalSetImportRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Appended eval set import task", evalset.AppendEvalSetImportResponse{})},
+		},
+		{
+			Method:      "POST",
+			Path:        "/eval-sets/{eval_set_id}/items",
+			Summary:     "Create eval set item",
+			Tags:        []string{"eval-set-items"},
+			PathParams:  evalset.EvalSetPathParams{},
+			RequestBody: jsonBodyOf(evalset.CreateEvalSetItemRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Created eval set item", evalset.EvalSetItemResponse{})},
+		},
+		{
+			Method:      "POST",
+			Path:        "/eval-sets/{eval_set_id}/items:batchDelete",
+			Summary:     "Batch delete eval set items",
+			Tags:        []string{"eval-set-items"},
+			PathParams:  evalset.EvalSetPathParams{},
+			RequestBody: jsonBodyOf(evalset.BatchDeleteEvalSetItemsRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Deleted eval set items", evalset.BatchDeleteEvalSetItemsResponse{})},
+		},
+		{
+			Method:      "PATCH",
+			Path:        "/eval-sets/{eval_set_id}/items/{item_id}",
+			Summary:     "Update eval set item",
+			Tags:        []string{"eval-set-items"},
+			PathParams:  evalset.EvalSetItemPathParams{},
+			RequestBody: jsonBodyOf(evalset.UpdateEvalSetItemRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Updated eval set item", evalset.EvalSetItemResponse{})},
+		},
+		{
+			Method:     "DELETE",
+			Path:       "/eval-sets/{eval_set_id}/items/{item_id}",
+			Summary:    "Delete eval set item",
+			Tags:       []string{"eval-set-items"},
+			PathParams: evalset.EvalSetItemPathParams{},
+			Responses:  map[int]openAPIResponse{200: resp("Deleted eval set item", evalset.DeleteEvalSetItemResponse{})},
+		},
+		{
+			Method:     "GET",
+			Path:       "/eval-sets/{eval_set_id}",
+			Summary:    "Get eval set",
+			Tags:       []string{"eval-sets"},
+			PathParams: evalset.EvalSetPathParams{},
+			Responses:  map[int]openAPIResponse{200: resp("Eval set details", evalset.EvalSetResponse{})},
+		},
+		{
+			Method:      "PATCH",
+			Path:        "/eval-sets/{eval_set_id}",
+			Summary:     "Update eval set",
+			Tags:        []string{"eval-sets"},
+			PathParams:  evalset.EvalSetPathParams{},
+			RequestBody: jsonBodyOf(evalset.UpdateEvalSetRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Updated eval set", evalset.EvalSetResponse{})},
+		},
+		{
+			Method:     "DELETE",
+			Path:       "/eval-sets/{eval_set_id}",
+			Summary:    "Delete eval set",
+			Tags:       []string{"eval-sets"},
+			PathParams: evalset.EvalSetPathParams{},
+			Responses:  map[int]openAPIResponse{200: resp("Deleted eval set", evalset.DeleteEvalSetResponse{})},
+		},
+		{
+			Method:      "GET",
 			Path:        "/datasets/{dataset}/documents",
 			Summary:     "Document list",
 			Tags:        []string{"documents"},
@@ -1151,6 +1370,14 @@ func registeredCoreOperations() []openAPIOperation {
 			PathParams:  datasetPathParams{},
 			RequestBody: jsonBodyOf(doc.SearchDocumentsRequest{}, false),
 			Responses:   map[int]openAPIResponse{200: resp("Document search results", doc.ListDocumentsResponse{})},
+		},
+		{
+			Method:      "POST",
+			Path:        "/documents:listByDatasets",
+			Summary:     "List documents by datasets",
+			Tags:        []string{"documents"},
+			RequestBody: jsonBodyOf(doc.ListDatasetDocumentsRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Dataset document list", doc.ListDocumentsResponse{})},
 		},
 		{
 			Method:      "POST",
@@ -1529,7 +1756,7 @@ func registeredCoreOperations() []openAPIOperation {
 			Method:      "GET",
 			Path:        "/model_providers",
 			Summary:     "List user model providers",
-			Description: "Per-user model provider list. On first request for a user, rows are copied from the built-in default_model_providers table. The current user identity is injected by the auth gateway from the token. Query parameter keyword filters by provider name (SQL LIKE).",
+			Description: "Per-user model provider list. Missing catalog rows are synced from default_model_providers on each request. Query parameter category filters by provider category (default model when category and exclude_category are both omitted). Query parameter exclude_category excludes a category (e.g. exclude_category=model returns ocr and search providers). Query parameter keyword filters by provider name (SQL LIKE).",
 			Tags:        []string{"model_providers"},
 			QueryParams: listUserModelProvidersQueryParams{},
 			Responses:   map[int]openAPIResponse{200: resp("User model provider list", listUserModelProvidersOpenAPIResponse{})},
@@ -1546,10 +1773,10 @@ func registeredCoreOperations() []openAPIOperation {
 			Method:      "POST",
 			Path:        "/model_providers/{model_provider_id}/groups/{group_id}:check",
 			Summary:     "Check model provider connectivity",
-			Description: "Validates credentials by proxying to the algorithm POST /api/model/check (LAZYMIND_ALGO_SERVICE_URL). Maps provider_name→source, base_url→url, api_key→api_key. The current user identity is injected by the auth gateway from the token. Response data is the algorithm JSON payload.",
+			Description: "Validates credentials. Model providers are proxied to the algorithm check endpoint; OCR cloud services use the same provider API/key request shape as the OCR readers. The current user identity is injected by the auth gateway from the token.",
 			Tags:        []string{"model_providers"},
 			RequestBody: jsonBodyOf(checkModelProviderOpenAPIRequest{}, true),
-			Responses:   map[int]openAPIResponse{200: resp("data: success and message from algorithm /api/model/check", modelprovider.CheckModelProviderData{})},
+			Responses:   map[int]openAPIResponse{200: resp("data: success and message from provider check", modelprovider.CheckModelProviderData{})},
 		},
 		{
 			Method:      "GET",
@@ -1598,7 +1825,7 @@ func registeredCoreOperations() []openAPIOperation {
 			Method:      "POST",
 			Path:        "/model_providers/{model_provider_id}/groups",
 			Summary:     "Create model provider connection group",
-			Description: "Creates a group (name, base_url, optional api_key) under the given user model provider. model_provider_id is the id from GET /model_providers. The api_key is not returned in the response body.",
+			Description: "Creates a group (name, base_url, optional api_key) under the given user model provider. OCR cloud services validate the submitted API key against the provider API before saving. The api_key is not returned in the response body.",
 			Tags:        []string{"model_providers"},
 			PathParams:  modelProviderGroupPathParams{},
 			RequestBody: jsonBodyOf(createModelProviderGroupOpenAPIRequest{}, true),
@@ -1608,7 +1835,7 @@ func registeredCoreOperations() []openAPIOperation {
 			Method:      "PATCH",
 			Path:        "/model_providers/{model_provider_id}/groups/{group_id}",
 			Summary:     "Update model provider connection group",
-			Description: "Updates name, base_url, and optionally api_key for a group. The group is selected by path group_id. Omit api_key or send an empty string to keep the existing API key (e.g. when the UI shows a mask). The api_key is not returned in the response body.",
+			Description: "Updates name, base_url, and optionally api_key for a group. OCR cloud services validate the effective API key against the provider API before saving. Omit api_key or send an empty string to keep the existing API key. The api_key is not returned in the response body.",
 			Tags:        []string{"model_providers"},
 			PathParams:  modelProviderGroupByIDPathParams{},
 			RequestBody: jsonBodyOf(updateModelProviderGroupOpenAPIRequest{}, true),
@@ -1940,6 +2167,50 @@ func registeredCoreOperations() []openAPIOperation {
 			Responses: map[int]openAPIResponse{
 				200: resp("Per-item apply results", wordgroup.ApplyWordGroupActionBatchResponse{}),
 			},
+		},
+		{
+			Method:      "GET",
+			Path:        "/model_providers/verified",
+			Summary:     "Check whether a provider category is ready",
+			Description: "Checks the current user's selected provider for the given category first, then falls back to a shared provider selection. This endpoint does not return selectable group details.",
+			Tags:        []string{"model_providers"},
+			QueryParams: verifiedProviderQueryParams{},
+			Responses:   map[int]openAPIResponse{200: resp("Provider ready state", verifiedProviderOpenAPIResponse{})},
+		},
+		{
+			Method:      "GET",
+			Path:        "/model_providers/provider_groups",
+			Summary:     "List verified provider groups for the current user",
+			Description: "Lists verified provider groups owned by the current user for the given non-model category (for example ocr or search). Shared provider groups are intentionally excluded from this selectable list.",
+			Tags:        []string{"model_providers"},
+			QueryParams: verifiedProviderQueryParams{},
+			Responses:   map[int]openAPIResponse{200: resp("Current user's verified provider groups", verifiedProviderGroupsOpenAPIResponse{})},
+		},
+		{
+			Method:      "GET",
+			Path:        "/model_providers/selected_providers",
+			Summary:     "Get selected provider groups (OCR, search, etc.)",
+			Description: "Returns the current user's selected provider group for each non-model category.",
+			Tags:        []string{"model_providers"},
+			Responses:   map[int]openAPIResponse{200: resp("Selected providers", selectedProvidersOpenAPIResponse{})},
+		},
+		{
+			Method:      "PUT",
+			Path:        "/model_providers/selected_providers",
+			Summary:     "Set selected provider group for a category",
+			Description: "Upserts selected provider groups by category. Request shape mirrors selected_models: selections contains category and group_id. Send an empty group_id to clear a category selection.",
+			Tags:        []string{"model_providers"},
+			RequestBody: jsonBodyOf(setSelectedProviderOpenAPIRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: resp("Saved selected providers", selectedProvidersOpenAPIResponse{})},
+		},
+		{
+			Method:      "PUT",
+			Path:        "/model_providers/selected_providers/share",
+			Summary:     "Set shared provider group for a category",
+			Description: "Sets or clears the share flag for a selected provider row. Only one share=true row is allowed per category. Protected by document.write permission.",
+			Tags:        []string{"model_providers"},
+			RequestBody: jsonBodyOf(setSharedProviderOpenAPIRequest{}, true),
+			Responses:   map[int]openAPIResponse{200: refResp("Updated share flag", "EmptyObject")},
 		},
 	}
 }

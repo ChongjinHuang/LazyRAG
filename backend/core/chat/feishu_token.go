@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -12,29 +13,23 @@ import (
 )
 
 const (
-	_scanSourcesTimeout = 5 * time.Second
-	_authTokenTimeout   = 5 * time.Second
-	_feishuProvider     = "feishu"
-	_notionProvider     = "notion"
-	_cloudBindingActive = "active"
+	_authTokenTimeout = 5 * time.Second
+	_feishuProvider   = "feishu"
+	_notionProvider   = "notion"
 )
 
 var _cloudToolProviders = []string{_feishuProvider, _notionProvider}
 
-// _scanSourceItem is a minimal projection of the scan-control-plane Source model.
-type _scanSourceItem struct {
-	ID           string `json:"id"`
-	SourceType   string `json:"source_type"`
-	Status       string `json:"status"`
-	CloudBinding *struct {
-		AuthConnectionID string `json:"auth_connection_id"`
-		Provider         string `json:"provider"`
-		Status           string `json:"status"`
-	} `json:"cloud_binding,omitempty"`
+// _chatEnabledConnectionItem is a minimal projection of the auth-service
+// connection list response.
+type _chatEnabledConnectionItem struct {
+	ConnectionID string `json:"connection_id"`
 }
 
-type _scanSourcesResponse struct {
-	Items []_scanSourceItem `json:"items"`
+type _chatEnabledConnectionsResponse struct {
+	Data struct {
+		Items []_chatEnabledConnectionItem `json:"items"`
+	} `json:"data"`
 }
 
 // _authTokenResponse is a minimal projection of the auth-service token response.
@@ -52,124 +47,109 @@ func authServiceInternalHeaders() map[string]string {
 	return headers
 }
 
-// fetchCloudToolConfig looks up active cloud sources for providers that can be
-// used directly by chat tools, retrieves their tokens from auth-service, and
-// returns a tool_config map accepted by the algorithm chat service.
-func fetchCloudToolConfig(ctx context.Context, r *http.Request, userID string) (map[string]string, error) {
+// fetchCloudToolConfig returns tool credentials for all chat-enabled cloud
+// connections owned by the current user. It intentionally uses auth-service as
+// the source of truth, so providers can share the same dynamic-token flow.
+func fetchCloudToolConfig(ctx context.Context, userID string) (map[string]any, error) {
+	userID = strings.TrimSpace(userID)
 	fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] fetchCloudToolConfig called userID=%q\n", userID)
-	if strings.TrimSpace(userID) == "" {
+	if userID == "" {
 		fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] empty userID, skip\n")
 		return nil, nil
 	}
 
-	scanURL := fmt.Sprintf("%s/api/scan/sources", common.ScanControlPlaneEndpoint())
-	var sourcesResp _scanSourcesResponse
-	err := common.ApiGet(
-		ctx,
-		scanURL,
-		map[string]string{"X-User-Id": userID},
-		&sourcesResp,
-		_scanSourcesTimeout,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("list scan sources: %w", err)
-	}
-
-	connectionIDs := map[string]string{}
-	for _, src := range sourcesResp.Items {
-		cb := src.CloudBinding
-		if cb == nil || strings.TrimSpace(cb.AuthConnectionID) == "" {
-			continue
-		}
-		if !strings.EqualFold(cb.Status, _cloudBindingActive) {
-			continue
-		}
-		provider := strings.ToLower(strings.TrimSpace(cb.Provider))
-		if provider == "" || connectionIDs[provider] != "" {
-			continue
-		}
-		connectionIDs[provider] = strings.TrimSpace(cb.AuthConnectionID)
-	}
-
-	toolConfig := map[string]string{}
+	var toolConfig map[string]any
 	for _, provider := range _cloudToolProviders {
-		connectionID := connectionIDs[provider]
-		if connectionID == "" {
-			fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] no active %s binding found for userID=%q (total sources=%d)\n", provider, userID, len(sourcesResp.Items))
-			continue
-		}
-		fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] found provider=%q connectionID=%q for userID=%q\n", provider, connectionID, userID)
-		tok, err := fetchCloudProviderToken(ctx, provider, connectionID)
+		tokens, err := fetchCloudProviderTokens(ctx, provider, userID)
 		if err != nil {
 			return nil, err
 		}
-		if tok != "" {
-			toolConfig[provider] = tok
+		if len(tokens) == 0 {
+			continue
 		}
-	}
-	if len(toolConfig) == 0 {
-		return nil, nil
+		var value any
+		if len(tokens) == 1 {
+			value = tokens[0]
+		} else {
+			value = tokens
+		}
+		toolConfig = mergeToolConfig(toolConfig, map[string]any{provider: value})
 	}
 	return toolConfig, nil
 }
 
-func fetchCloudProviderToken(ctx context.Context, provider, connectionID string) (string, error) {
-	tokenURL := fmt.Sprintf(
-		"%s/v1/cloud/connections/%s/token",
+func fetchCloudProviderTokens(ctx context.Context, provider, userID string) ([]string, error) {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	if provider == "" || strings.TrimSpace(userID) == "" {
+		return nil, nil
+	}
+	fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] list chat-enabled provider=%q userID=%q\n", provider, userID)
+
+	listURL := fmt.Sprintf(
+		"%s/v1/cloud/connections/internal/chat-enabled?provider=%s&owner_user_id=%s",
 		common.AuthServiceBaseURL(),
-		connectionID,
+		url.QueryEscape(provider),
+		url.QueryEscape(userID),
 	)
-	var tokenResp _authTokenResponse
+	var connectionsResp _chatEnabledConnectionsResponse
 	err := common.ApiGet(
 		ctx,
-		tokenURL,
+		listURL,
 		authServiceInternalHeaders(),
-		&tokenResp,
+		&connectionsResp,
 		_authTokenTimeout,
 	)
 	if err != nil {
-		return "", fmt.Errorf("fetch %s token for connection %s: %w", provider, connectionID, err)
+		return nil, fmt.Errorf("list chat-enabled %s connections: %w", provider, err)
+	}
+	if len(connectionsResp.Data.Items) == 0 {
+		fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] no chat-enabled %s connections for userID=%q\n", provider, userID)
+		return nil, nil
 	}
 
-	tok := strings.TrimSpace(tokenResp.Data.AccessToken)
-	fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] got provider=%q token len=%d for connectionID=%q\n", provider, len(tok), connectionID)
-	return tok, nil
+	tokens := make([]string, 0, len(connectionsResp.Data.Items))
+	for _, item := range connectionsResp.Data.Items {
+		connectionID := strings.TrimSpace(item.ConnectionID)
+		if connectionID == "" {
+			continue
+		}
+		tokenURL := fmt.Sprintf(
+			"%s/v1/cloud/connections/%s/token?user_id=%s",
+			common.AuthServiceBaseURL(),
+			url.PathEscape(connectionID),
+			url.QueryEscape(userID),
+		)
+		var tokenResp _authTokenResponse
+		if err := common.ApiGet(
+			ctx,
+			tokenURL,
+			authServiceInternalHeaders(),
+			&tokenResp,
+			_authTokenTimeout,
+		); err != nil {
+			fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] failed to fetch provider=%q token for connectionID=%q: %v\n", provider, connectionID, err)
+			continue
+		}
+		tok := strings.TrimSpace(tokenResp.Data.AccessToken)
+		if tok != "" {
+			fmt.Printf("[Core] [CLOUD_TOOL_TOKEN] got provider=%q token len=%d for connectionID=%q\n", provider, len(tok), connectionID)
+			tokens = append(tokens, tok)
+		}
+	}
+	return tokens, nil
 }
 
-// fetchFeishuToken keeps the old helper available for focused tests and callers
-// while the chat path uses the generic cloud tool config fetcher.
-func fetchFeishuToken(ctx context.Context, r *http.Request, userID string) (string, error) {
-	tokens, err := fetchCloudToolConfig(ctx, r, userID)
-	if err != nil {
+// fetchFeishuTokens keeps the old helper available for focused tests and callers.
+func fetchFeishuTokens(ctx context.Context, userID string) ([]string, error) {
+	return fetchCloudProviderTokens(ctx, _feishuProvider, userID)
+}
+
+// fetchFeishuToken keeps the older single-token helper available for focused
+// tests and callers.
+func fetchFeishuToken(ctx context.Context, _ *http.Request, userID string) (string, error) {
+	tokens, err := fetchFeishuTokens(ctx, userID)
+	if err != nil || len(tokens) == 0 {
 		return "", err
 	}
-	return strings.TrimSpace(tokens[_feishuProvider]), nil
-}
-
-func mergeToolConfig(reqBody map[string]any, toolConfig map[string]string) {
-	if len(toolConfig) == 0 {
-		return
-	}
-	merged := map[string]string{}
-	if existing, ok := reqBody["tool_config"].(map[string]string); ok {
-		for k, v := range existing {
-			if strings.TrimSpace(k) != "" && strings.TrimSpace(v) != "" {
-				merged[k] = v
-			}
-		}
-	} else if existing, ok := reqBody["tool_config"].(map[string]any); ok {
-		for k, v := range existing {
-			if sv, ok := v.(string); ok && strings.TrimSpace(k) != "" && strings.TrimSpace(sv) != "" {
-				merged[k] = sv
-			}
-		}
-	}
-	for k, v := range toolConfig {
-		if strings.TrimSpace(k) != "" && strings.TrimSpace(v) != "" {
-			merged[k] = v
-		}
-	}
-	if len(merged) > 0 {
-		reqBody["tool_config"] = merged
-	}
+	return tokens[0], nil
 }
