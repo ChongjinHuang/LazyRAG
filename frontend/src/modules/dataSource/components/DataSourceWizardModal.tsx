@@ -23,6 +23,7 @@ import type { ReactNode } from "react";
 import {
   ApiOutlined,
   ClockCircleOutlined,
+  DatabaseOutlined,
   DisconnectOutlined,
   FolderOpenOutlined,
   LinkOutlined,
@@ -86,6 +87,10 @@ const sourceTypeOptions: Array<{
     type: "feishu",
     icon: <ApiOutlined />,
   },
+  {
+    type: "notion",
+    icon: <DatabaseOutlined />,
+  },
 ];
 
 interface DataSourceWizardModalProps {
@@ -97,6 +102,7 @@ interface DataSourceWizardModalProps {
   existingKnowledgeBaseNames: string[];
   selectedType: SourceType | null;
   isFeishuSetupReady: boolean;
+  isNotionSetupReady?: boolean;
   connectionVerified: boolean;
   syncMode: SyncMode;
   saving: boolean;
@@ -111,6 +117,7 @@ interface DataSourceWizardModalProps {
   onSave: (mode: "create" | "createAndSync") => void;
   onSelectType: (type: SourceType) => void;
   onResetFeishuSetup: () => void;
+  onResetNotionSetup?: () => void;
   onTestConnection: () => void;
   onInvalidateConnection: () => void;
   onLoadLocalPathOptions?: (path?: string) => void;
@@ -130,6 +137,7 @@ export default function DataSourceWizardModal({
   existingKnowledgeBaseNames,
   selectedType,
   isFeishuSetupReady,
+  isNotionSetupReady = false,
   connectionVerified,
   syncMode,
   saving,
@@ -144,6 +152,7 @@ export default function DataSourceWizardModal({
   onSave,
   onSelectType,
   onResetFeishuSetup,
+  onResetNotionSetup,
   onTestConnection,
   onInvalidateConnection,
   onLoadLocalPathOptions,
@@ -285,13 +294,15 @@ export default function DataSourceWizardModal({
             <div className="data-source-type-grid">
               {sourceTypeOptions.map((item) => {
                 const isFeishuLocked = item.type === "feishu" && !isFeishuSetupReady;
+                const isNotionLocked = item.type === "notion" && !isNotionSetupReady;
+                const isCloudLocked = isFeishuLocked || isNotionLocked;
                 return (
                   <button
                     key={item.type}
                     type="button"
                     className={`data-source-type-card ${
                       selectedType === item.type ? "selected" : ""
-                    } ${isFeishuLocked ? "locked" : ""}`}
+                    } ${isCloudLocked ? "locked" : ""}`}
                     onClick={() => onSelectType(item.type)}
                   >
                     <div className="data-source-type-card-header">
@@ -299,8 +310,8 @@ export default function DataSourceWizardModal({
                         {item.icon}
                       </span>
                       <Space size={6}>
-                        {item.type === "feishu" ? (
-                          isFeishuLocked ? (
+                        {item.type === "feishu" || item.type === "notion" ? (
+                          isCloudLocked ? (
                             <span className="data-source-type-gate-icon locked" aria-hidden="true">
                               <LockOutlined />
                             </span>
@@ -313,7 +324,11 @@ export default function DataSourceWizardModal({
                               onClick={(event) => {
                                 event.preventDefault();
                                 event.stopPropagation();
-                                onResetFeishuSetup();
+                                if (item.type === "feishu") {
+                                  onResetFeishuSetup();
+                                } else {
+                                  onResetNotionSetup?.();
+                                }
                               }}
                             />
                           )
@@ -327,6 +342,8 @@ export default function DataSourceWizardModal({
                     <Text type="secondary">
                       {item.type === "feishu" && isFeishuLocked
                         ? t("admin.dataSourceFeishuLockHint")
+                        : item.type === "notion" && isNotionLocked
+                          ? "请先配置 Notion OAuth 应用凭证并完成授权。"
                         : getSourceTypeDescription(item.type, t)}
                     </Text>
                   </button>
@@ -426,7 +443,7 @@ export default function DataSourceWizardModal({
                       }}
                     />
                   </Form.Item>
-                ) : (
+                ) : selectedType === "feishu" ? (
                   <Form.Item
                     label={t("admin.dataSourceFeishuSpace")}
                     name="target"
@@ -478,6 +495,41 @@ export default function DataSourceWizardModal({
                       }}
                     />
                   </Form.Item>
+                ) : (
+                  <>
+                    <Form.Item
+                      label="Notion 目标类型"
+                      name="targetType"
+                      rules={[{ required: true, message: "请选择 Notion 目标类型" }]}
+                    >
+                      <Radio.Group disabled={isEditMode}>
+                        <Radio.Button value="page">Page</Radio.Button>
+                        <Radio.Button value="database">Database</Radio.Button>
+                      </Radio.Group>
+                    </Form.Item>
+                    <Form.Item
+                      label="Notion 页面或数据库"
+                      name="target"
+                      rules={[
+                        {
+                          validator: (_rule, value) => {
+                            const values = Array.isArray(value) ? value : value ? [value] : [];
+                            return values
+                              .map((item) => `${item || ""}`.trim())
+                              .filter(Boolean).length > 0
+                              ? Promise.resolve()
+                              : Promise.reject(new Error("请粘贴 Notion 页面/数据库链接或 ID"));
+                          },
+                        },
+                      ]}
+                    >
+                      <Input.TextArea
+                        disabled={isEditMode}
+                        placeholder="https://www.notion.so/... 或 Notion page/database id"
+                        autoSize={{ minRows: 3, maxRows: 6 }}
+                      />
+                    </Form.Item>
+                  </>
                 )}
 
                 {selectedType === "local" ? renderConnectionSection() : null}

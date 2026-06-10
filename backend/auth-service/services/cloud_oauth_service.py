@@ -9,6 +9,7 @@ from typing import Any
 from core.cloud_crypto import decrypt_json, encrypt_json
 from core.database import SessionLocal
 from core.errors import AppException, ErrorCodes, raise_error
+from repositories import CloudAuthConnectionRepository
 from services.cloud_oauth_provider import CloudAccountProfile, CloudOAuthProvider, CloudTokenPayload
 from services.providers import FeishuOAuthProvider, NotionOAuthProvider
 
