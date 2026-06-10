@@ -238,7 +238,9 @@ _TOOL_RESULT_PREVIEW_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_exists': 'Existence check for {value} in Feishu completed successfully.',
     'FeishuWikiFS_read': 'Feishu document content from {value} was loaded successfully.',
     'FeishuWikiFS_read_file': 'Feishu file content from {value} was loaded successfully.',
-    'FeishuWikiFS_read_with_references': 'Feishu document content and references from {value} were loaded successfully.',
+    'FeishuWikiFS_read_with_references': (
+        'Feishu document content and references from {value} were loaded successfully.'
+    ),
     'FeishuWikiFS_resolve_link': 'Feishu document metadata for {value} was retrieved successfully.',
     'FeishuWikiFS_get_document_id': 'Feishu document id for {value} was resolved successfully.',
     'FeishuWikiFS_get_doc_blocks': 'Editable Feishu document blocks for {value} were listed successfully.',
