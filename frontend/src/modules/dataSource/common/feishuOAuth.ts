@@ -1,8 +1,15 @@
-import { AgentAppsAuth } from "@/components/auth";
 import { BASE_URL } from "@/components/request";
 import i18n from "@/i18n";
+import {
+  dataSourceCloudOauthApi,
+  unwrapDataSourceApiData,
+} from "@/modules/dataSource/api";
+import type {
+  CloudConnectionUpdateBody,
+  CloudOAuthAuthorizeURLBody,
+  CloudOAuthCallbackBody,
+} from "@/api/generated/auth-client";
 
-const API_BASE = `${BASE_URL || window.location.origin}/api/authservice/v1`;
 const RESULT_STORAGE_KEY = "lazymind:datasource:feishu-oauth:result";
 const DRAFT_STORAGE_KEY = "lazymind:datasource:feishu-oauth:draft";
 const PENDING_STORAGE_KEY = "lazymind:datasource:feishu-oauth:pending";
@@ -113,27 +120,6 @@ function normalizeSameOriginReturnUrl(value?: string) {
   } catch {
     return fallbackUrl;
   }
-}
-
-function getAuthHeaders() {
-  const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-  };
-  const token = AgentAppsAuth.getAccessToken();
-  const userInfo = AgentAppsAuth.getUserInfo();
-
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
-  }
-  if (userInfo?.userId) {
-    headers["X-User-Id"] = userInfo.userId;
-  }
-
-  return headers;
-}
-
-function parseJsonResponse(response: Response) {
-  return response.json().catch(() => ({}));
 }
 
 function unwrapPayload<T>(payload: any): T {
@@ -528,24 +514,25 @@ export async function requestCloudDataSourceAuthorizeUrl(
     }
   }
 
-  const response = await fetch(
-    `${API_BASE}/cloud/${provider}/oauth/authorize-url`,
-    {
-      method: "POST",
-      credentials: "include",
-      headers: getAuthHeaders(),
-      body: JSON.stringify(body),
-    },
-  );
-  const payload = await parseJsonResponse(response);
-  const data = unwrapPayload<any>(payload);
+  let payload: unknown;
+  try {
+    const response = await dataSourceCloudOauthApi.oauthAuthorizeUrlApiAuthserviceV1CloudProviderOauthAuthorizeUrlPost({
+      provider,
+      cloudOAuthAuthorizeURLBody: body as CloudOAuthAuthorizeURLBody,
+    });
+    payload = response.data;
+  } catch (error: any) {
+    payload = error?.response?.data || error;
+    throw new Error(getErrorMessage(payload, i18n.t("admin.dataSourceAuthorizeUrlFailed")));
+  }
+
+  const data = unwrapDataSourceApiData<any>(payload);
   const authorizeUrl = data?.authorize_url || data?.authorizeUrl;
   const connectionId = data?.connection_id || data?.connectionId;
   const state = data?.state;
 
   if (
     hasBusinessError(payload) ||
-    !response.ok ||
     typeof authorizeUrl !== "string" ||
     !authorizeUrl.trim() ||
     typeof connectionId !== "string" ||
@@ -585,22 +572,25 @@ export async function finishCloudDataSourceOAuth(
     throw new Error(i18n.t("admin.dataSourceOauthStateMismatch"));
   }
 
-  const response = await fetch(`${API_BASE}/cloud/${provider}/oauth/callback`, {
-    method: "POST",
-    credentials: "include",
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      tenant_id: pending.tenantId,
-      connection_id: pending.connectionId,
-      code,
-      state,
-      redirect_uri: pending.redirectUri,
-    }),
-  });
-  const payload = await parseJsonResponse(response);
+  let payload: unknown;
+  try {
+    const response = await dataSourceCloudOauthApi.oauthCallbackApiAuthserviceV1CloudProviderOauthCallbackPost({
+      provider,
+      cloudOAuthCallbackBody: {
+        tenant_id: pending.tenantId,
+        connection_id: pending.connectionId,
+        code,
+        state,
+        redirect_uri: pending.redirectUri,
+      } satisfies CloudOAuthCallbackBody,
+    });
+    payload = response.data;
+  } catch (error: any) {
+    payload = error?.response?.data || error;
+    throw new Error(getFeishuOAuthCallbackErrorMessage(payload));
+  }
 
   if (
-    !response.ok ||
     hasBusinessError(payload)
   ) {
     throw new Error(getFeishuOAuthCallbackErrorMessage(payload));
@@ -615,22 +605,28 @@ export async function finishFeishuDataSourceOAuth(code: string, state: string) {
 }
 
 export async function enableCloudConnectionForChat(connectionId: string) {
-  const response = await fetch(`${API_BASE}/cloud/connections/${encodeURIComponent(connectionId)}`, {
-    method: "PATCH",
-    credentials: "include",
-    headers: getAuthHeaders(),
-    body: JSON.stringify({
-      chat_enabled: true,
-      chatEnabled: true,
-    }),
-  });
-  const payload = await parseJsonResponse(response);
+  const body = {
+    chat_enabled: true,
+    chatEnabled: true,
+  } satisfies CloudConnectionUpdateBody;
+  let payload: unknown;
 
-  if (!response.ok || hasBusinessError(payload)) {
+  try {
+    const response = await dataSourceCloudOauthApi.patchConnectionApiAuthserviceV1CloudConnectionsConnectionIdPatch({
+      connectionId,
+      cloudConnectionUpdateBody: body,
+    });
+    payload = response.data;
+  } catch (error: any) {
+    payload = error?.response?.data || error;
     throw new Error(getErrorMessage(payload, i18n.t("common.requestFailed")));
   }
 
-  return unwrapPayload<any>(payload);
+  if (hasBusinessError(payload)) {
+    throw new Error(getErrorMessage(payload, i18n.t("common.requestFailed")));
+  }
+
+  return unwrapDataSourceApiData<any>(payload);
 }
 
 export function saveFeishuDataSourceOAuthResult(

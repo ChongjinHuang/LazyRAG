@@ -33,18 +33,19 @@ import { useTranslation } from "react-i18next";
 import type { TFunction } from "i18next";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
-  CloudOauthApi,
-  Configuration as AuthConfiguration,
   type CloudConnectionResponse,
   type CloudOAuthAppCredentialBody,
 } from "@/api/generated/auth-client";
 import {
-  Configuration as CoreConfiguration,
-  DatasetsApi as CoreDatasetsApi,
   type Dataset as CoreDataset,
 } from "@/api/generated/core-client";
-import { AgentAppsAuth } from "@/components/auth";
-import { BASE_URL, axiosInstance, getLocalizedErrorMessage } from "@/components/request";
+import { getLocalizedErrorMessage } from "@/components/request";
+import {
+  dataSourceCloudOauthApi,
+  dataSourceDatasetsApi,
+  dataSourceModelProvidersApi,
+  unwrapDataSourceApiData,
+} from "./api";
 
 import "./index.scss";
 import DataSourceWizardModal from "./components/DataSourceWizardModal";
@@ -305,59 +306,8 @@ const datasourceConnectors: Array<{ key: string; name: string; icon: ReactNode; 
   },
 ];
 
-interface ApiEnvelope<T> {
-  data?: T;
-}
-
-function unwrapResponse<T>(payload: ApiEnvelope<T> | T): T {
-  if (payload && typeof payload === "object" && "data" in payload) {
-    return (payload as ApiEnvelope<T>).data as T;
-  }
-  return payload as T;
-}
-
-function getCoreApiBaseUrl() {
-  return `${BASE_URL || window.location.origin}/api/core`;
-}
-
-function getCoreRequestHeaders() {
-  return {
-    "Content-Type": "application/json",
-    ...AgentAppsAuth.getAuthHeaders(),
-  };
-}
-
 function normalizeProviderName(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
-}
-
-function createCoreDatasetsApiClient() {
-  const baseUrl = BASE_URL || window.location.origin;
-  return new CoreDatasetsApi(
-    new CoreConfiguration({
-      basePath: baseUrl,
-      baseOptions: {
-        headers: { "Content-Type": "application/json" },
-      },
-    }),
-    baseUrl,
-    axiosInstance,
-  );
-}
-
-function createCloudOauthApiClient() {
-  const baseUrl = BASE_URL || window.location.origin;
-  return new CloudOauthApi(
-    new AuthConfiguration({
-      basePath: baseUrl,
-      accessToken: () => AgentAppsAuth.getAccessToken(),
-      baseOptions: {
-        headers: AgentAppsAuth.getAuthHeaders(),
-      },
-    }),
-    baseUrl,
-    axiosInstance,
-  );
 }
 
 function normalizeFeishuAccountStatus(status?: string): FeishuConnectionStatus {
@@ -472,7 +422,7 @@ function mapCloudConnectionToDataSourceConnection(
   };
 }
 
-async function listKnowledgeBaseNames(client = createCoreDatasetsApiClient()) {
+async function listKnowledgeBaseNames(client = dataSourceDatasetsApi) {
   const names: string[] = [];
   let pageToken: string | undefined;
 
@@ -495,7 +445,7 @@ async function listKnowledgeBaseNames(client = createCoreDatasetsApiClient()) {
   return names;
 }
 
-async function listDefaultKnowledgeBaseIds(client = createCoreDatasetsApiClient()) {
+async function listDefaultKnowledgeBaseIds(client = dataSourceDatasetsApi) {
   const ids: string[] = [];
   let pageToken: string | undefined;
 
@@ -1575,7 +1525,7 @@ export default function DataSourceManagement() {
     datasetName: string,
     chatEnabled: boolean,
   ) => {
-    const client = createCoreDatasetsApiClient();
+    const client = dataSourceDatasetsApi;
     if (chatEnabled) {
       await client.apiCoreDatasetsDatasetSetDefaultPost({
         dataset: datasetId,
@@ -2002,7 +1952,7 @@ export default function DataSourceManagement() {
   const refreshFeishuAuthAccounts = async () => {
     try {
       const response =
-        await createCloudOauthApiClient().listConnectionsApiAuthserviceV1CloudConnectionsGet({
+        await dataSourceCloudOauthApi.listConnectionsApiAuthserviceV1CloudConnectionsGet({
           provider: "feishu",
           status: null,
         });
@@ -2030,7 +1980,7 @@ export default function DataSourceManagement() {
   const refreshNotionAuthConnection = async () => {
     try {
       const response =
-        await createCloudOauthApiClient().listConnectionsApiAuthserviceV1CloudConnectionsGet({
+        await dataSourceCloudOauthApi.listConnectionsApiAuthserviceV1CloudConnectionsGet({
           provider: "notion",
           status: null,
         });
@@ -2600,7 +2550,7 @@ export default function DataSourceManagement() {
       client_id: setup.appId,
       client_secret: setup.appSecret,
     };
-    await createCloudOauthApiClient().saveOauthAppCredentialsApiAuthserviceV1CloudProviderOauthAppCredentialsPut({
+    await dataSourceCloudOauthApi.saveOauthAppCredentialsApiAuthserviceV1CloudProviderOauthAppCredentialsPut({
       provider,
       cloudOAuthAppCredentialBody: body,
     });
@@ -2836,32 +2786,11 @@ export default function DataSourceManagement() {
       return;
     }
     try {
-      const query = new URLSearchParams({
+      const response = await dataSourceModelProvidersApi.apiCoreModelProvidersGet({
         category: "datasource",
         keyword: connector.name,
       });
-      const response = await axiosInstance.request<
-        ApiEnvelope<{
-          providers?: Array<{
-            id: string;
-            name: string;
-            description?: string;
-            is_configured?: boolean;
-          }>;
-        }> | {
-          providers?: Array<{
-            id: string;
-            name: string;
-            description?: string;
-            is_configured?: boolean;
-          }>;
-        }
-      >({
-        method: "GET",
-        url: `${getCoreApiBaseUrl()}/model_providers?${query.toString()}`,
-        headers: getCoreRequestHeaders(),
-      });
-      const providers = unwrapResponse<{
+      const providers = unwrapDataSourceApiData<{
         providers?: Array<{
           id: string;
           name: string;
