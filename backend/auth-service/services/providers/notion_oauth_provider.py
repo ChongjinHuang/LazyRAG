@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from urllib import parse, request
 from urllib.error import HTTPError, URLError
 
-from services.cloud_oauth_provider import CloudOAuthProvider, CloudTokenPayload
+from services.cloud_oauth_provider import CloudOAuthProvider, CloudTokenPayload, CloudAccountProfile
 
 
 _NOTION_OAUTH_AUTHORIZE_URL = 'https://api.notion.com/v1/oauth/authorize'
@@ -126,8 +126,18 @@ class NotionOAuthProvider(CloudOAuthProvider):
         # existing service_account/tenant auth path by storing that token as
         # client_secret.
         return CloudTokenPayload(
-            access_token=(client_secret or '').strip(),
-            expires_at=None,
-            refresh_token=None,
-            token_type='Bearer',
-        )
+           access_token=(client_secret or '').strip(),
+           expires_at=None,
+           refresh_token=None,
+           token_type='Bearer',
+       )
+
+    def fetch_account_profile(
+        self,
+        *,
+        access_token: str,
+    ) -> CloudAccountProfile:
+        """Notion does not expose a profile endpoint via the access token.
+        Return an empty profile so the caller stores the connection record
+        without a provider_account_id."""
+        return CloudAccountProfile()

@@ -1264,8 +1264,8 @@ const enUS = {
     dataSourceTenantKey: "Tenant Key",
     dataSourceTokenSummary: "Token Summary",
     dataSourceGrantedScopes: "Granted Scopes",
-    dataSourceOauthSuccess: "Feishu OAuth succeeded. Account connection status updated.",
-    dataSourceOauthFailedRetry: "Feishu OAuth failed. Please try again later.",
+    dataSourceOauthSuccess: "OAuth succeeded. Account connection status updated.",
+    dataSourceOauthFailedRetry: "OAuth failed. Please try again later.",
     dataSourceOauthSessionMissing:
       "Authorization session expired. Please start Feishu OAuth again.",
     dataSourceOauthStateMismatch:
