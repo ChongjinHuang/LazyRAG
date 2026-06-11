@@ -126,11 +126,11 @@ class NotionOAuthProvider(CloudOAuthProvider):
         # existing service_account/tenant auth path by storing that token as
         # client_secret.
         return CloudTokenPayload(
-           access_token=(client_secret or '').strip(),
-           expires_at=None,
-           refresh_token=None,
-           token_type='Bearer',
-       )
+            access_token=(client_secret or '').strip(),
+            expires_at=None,
+            refresh_token=None,
+            token_type='Bearer',
+        )
 
     def fetch_account_profile(
         self,
