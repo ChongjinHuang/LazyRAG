@@ -107,6 +107,7 @@ import {
   getSyncModeLabel,
   normalizeDataSourceConnectionState,
   normalizeDataSourceStatus,
+  resolveStorageUsed,
 } from "./shared";
 import {
   createScanRequestId,
@@ -230,6 +231,10 @@ function resolveSourceTypeFromValues(
 
 function getDatasetDisplayName(dataset: CoreDataset) {
   return `${dataset.display_name || dataset.name || ""}`.trim();
+}
+
+function isDataSourceManagedDataset(dataset: CoreDataset) {
+  return Boolean(dataset.scan_managed || dataset.scan_source_type);
 }
 
 function loadLocalScanChatEnabled() {
@@ -432,7 +437,10 @@ async function listKnowledgeBaseNames(client = dataSourceDatasetsApi) {
       pageSize: 200,
     });
     names.push(
-      ...(response.data.datasets || []).map(getDatasetDisplayName).filter(Boolean),
+      ...(response.data.datasets || [])
+        .filter((dataset) => !isDataSourceManagedDataset(dataset))
+        .map(getDatasetDisplayName)
+        .filter(Boolean),
     );
 
     const nextPageToken = response.data.next_page_token || "";
@@ -1633,7 +1641,7 @@ export default function DataSourceManagement() {
     const addCount = summary?.new_count ?? fallback?.addCount ?? 0;
     const deleteCount = summary?.deleted_count ?? fallback?.deleteCount ?? 0;
     const changeCount = summary?.modified_count ?? fallback?.changeCount ?? 0;
-    const storageUsed = fallback?.storageUsed || "0 B";
+    const storageUsed = resolveStorageUsed(summary, fallback?.storageUsed);
 
     if (isFeishuSource) {
       const bindingTargetTypes = getFeishuBindingTargetTypes(bindings);
@@ -1873,11 +1881,14 @@ export default function DataSourceManagement() {
         }),
       ]);
       const sourceList = (sourcesResponse.data.items || []) as ScanV2Source[];
+      const visibleSourceList = sourceList.filter(
+        (source) => normalizeDataSourceStatus(source.status) !== "deleted",
+      );
       const previousSourceMap = new Map(
         sources.map((item) => [item.id, item]),
       );
       const nextSources = await Promise.all(
-        sourceList.map(async (source) => {
+        visibleSourceList.map(async (source) => {
           const sourceId = getScanSourceId(source);
           const fallback = previousSourceMap.get(sourceId);
           try {
@@ -2265,7 +2276,9 @@ export default function DataSourceManagement() {
 
   const getKnownKnowledgeBaseNames = () => [
     ...knowledgeBaseNames,
-    ...sources.map((item) => item.knowledgeBase),
+    ...sources
+      .filter((item) => item.status === "active")
+      .map((item) => item.knowledgeBase),
   ];
 
   const resetWizard = () => {
@@ -3024,7 +3037,10 @@ export default function DataSourceManagement() {
             sources.length <= 1 && sourceListPage > 1
               ? sourceListPage - 1
               : sourceListPage;
-          await refreshSources(false, { page: nextPage });
+          await Promise.all([
+            refreshSources(false, { page: nextPage }),
+            refreshKnowledgeBaseNames(),
+          ]);
         } catch (error) {
           message.error(
             getLocalizedErrorMessage(error, t("admin.dataSourceDeleteFailed")) ||
