@@ -58,6 +58,8 @@ _REPRESENTATIVE_TOOL_ARGUMENTS: dict[str, str] = {
     'FeishuWikiFS_move': 'path1',
     'FeishuWikiFS_copy': 'path1',
     'advance_step': 'step_id',
+    'search_online': 'query',
+    'find_online': 'pattern',
 }
 
 _REPRESENTATIVE_TOOL_RESULTS: dict[str, str] = {
@@ -98,6 +100,8 @@ _REPRESENTATIVE_TOOL_RESULTS: dict[str, str] = {
     'FeishuWikiFS_write': 'path',
     'FeishuWikiFS_move': 'path2',
     'FeishuWikiFS_copy': 'path2',
+    'search_online': 'feishu.total',
+    'find_online': 'feishu.total',
 }
 
 _TOOL_CALL_PREVIEW_TEMPLATES: dict[str, str] = {
@@ -148,6 +152,8 @@ _TOOL_CALL_PREVIEW_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_move': 'Moving Feishu file from {value} to the target path.',
     'FeishuWikiFS_copy': 'Copying Feishu file from {value} to the target path.',
     'advance_step': 'Switching to step {value}.',
+    'search_online': 'Searching online knowledge bases for {value}.',
+    'find_online': 'Finding documents matching pattern {value} in online knowledge bases.',
     'regex:trigger_(.+)_plugin': 'Loading the {match} plugin now.',
 }
 _TOOL_CALL_FALLBACK_TEMPLATE = 'Calling a tool to handle the request.'
@@ -199,6 +205,8 @@ _ZH_TOOL_CALL_PREVIEW_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_write': '正在向飞书文件 {value} 写入内容。',
     'FeishuWikiFS_move': '正在将飞书文件从 {value} 移动到目标路径。',
     'FeishuWikiFS_copy': '正在将飞书文件从 {value} 复制到目标路径。',
+    'search_online': '正在在线知识库中搜索 {value}。',
+    'find_online': '正在在线知识库中按文件名模式 {value} 查找文档。',
     'advance_step': '正在切换到步骤 {value}...',
     'regex:trigger_(.+)_plugin': '正在加载 {match} 插件...',
 }
@@ -253,6 +261,8 @@ _TOOL_RESULT_PREVIEW_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_write': 'Content was written to Feishu file at {value} successfully.',
     'FeishuWikiFS_move': 'Feishu file was moved from {value} to the target path successfully.',
     'FeishuWikiFS_copy': 'Feishu file was copied from {value} to the target path successfully.',
+    'search_online': 'Online search results for {value} are ready now.',
+    'find_online': 'Documents matching pattern {value} were found in online knowledge bases.',
     'advance_step': 'Plugin launched.',
     'regex:trigger_(.+)_plugin': 'Plugin launched.',
 }
@@ -304,6 +314,8 @@ _ZH_TOOL_RESULT_PREVIEW_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_write': '已成功向飞书文件 {value} 写入内容。',
     'FeishuWikiFS_move': '已成功将飞书文件从 {value} 移动到目标路径。',
     'FeishuWikiFS_copy': '已成功将飞书文件从 {value} 复制到目标路径。',
+    'search_online': '已查询到 {value} 的在线知识库搜索结果。',
+    'find_online': '已在在线知识库中找到匹配模式 {value} 的文档。',
     'advance_step': '插件已启动',
     'regex:trigger_(.+)_plugin': '插件已启动',
 }
@@ -355,6 +367,8 @@ _TOOL_RESULT_FAILURE_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_write': 'Content could not be written to Feishu file at {value}.',
     'FeishuWikiFS_move': 'Feishu file could not be moved from {value} to the target path.',
     'FeishuWikiFS_copy': 'Feishu file could not be copied from {value} to the target path.',
+    'search_online': 'Online search for {value} could not be retrieved.',
+    'find_online': 'Documents matching pattern {value} could not be found in online knowledge bases.',
     'advance_step': 'Step {value} could not be started.',
     'regex:trigger_(.+)_plugin': 'Failed to load the {match} plugin.',
 }

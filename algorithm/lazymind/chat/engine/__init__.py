@@ -1,5 +1,6 @@
 from .tools import (
     KBToolGroup,
+    OnlineSearchToolGroup,
     TempKBToolGroup,
     calculator,
     memory_editor,
@@ -11,6 +12,7 @@ from .tools import (
 
 __all__ = [
     'KBToolGroup',
+    'OnlineSearchToolGroup',
     'TempKBToolGroup',
     'calculator',
     'memory_editor',

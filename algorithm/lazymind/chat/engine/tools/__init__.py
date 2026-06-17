@@ -8,6 +8,7 @@ from .calculator import calculator
 from .kb import KBToolGroup, TempKBToolGroup
 from .memory_editor import memory_editor
 from .multimodal import image_editor, image_generator, vision_extractor
+from .online_search import OnlineSearchToolGroup
 from .skill_editor import skill_editor
 from .vocab_learn import vocab_learn
 from .web_search import url_fetch
@@ -17,6 +18,7 @@ __all__ = [
     'image_editor',
     'image_generator',
     'KBToolGroup',
+    'OnlineSearchToolGroup',
     'TempKBToolGroup',
     'memory_editor',
     'vision_extractor',

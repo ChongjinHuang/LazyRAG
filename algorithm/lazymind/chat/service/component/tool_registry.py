@@ -19,6 +19,7 @@ from lazyllm.tools.tools.search import (
 
 from lazymind.chat.engine.tools import (
     KBToolGroup,
+    OnlineSearchToolGroup,
     TempKBToolGroup,
     calculator,
     image_editor,
@@ -158,6 +159,12 @@ DEFAULT_TOOLS: list[ToolGroupConfig] = [
         label='Notion 文件系统',
         description='浏览、搜索和管理 Notion 页面',
         instance=NotionFS(dynamic_auth=True),
+    ),
+    ToolGroupConfig(
+        name='online_search',
+        label='在线知识库搜索',
+        description='搜索飞书Wiki和Notion在线知识库，支持关键词检索和文件名正则查找',
+        instance=OnlineSearchToolGroup(),
     ),
 ]
 
