@@ -2457,7 +2457,7 @@ export default function DataSourceManagement() {
         message.warning(
           provider === "feishu"
             ? t("admin.dataSourceFeishuCredentialRequired")
-            : "请先填写 Notion OAuth Client ID 和 Client Secret。",
+            : t("admin.dataSourceNotionCredentialRequired"),
         );
         return false;
       }
@@ -2499,7 +2499,7 @@ export default function DataSourceManagement() {
 
       const popup = openCenteredPopup(
         authorizeUrl,
-        provider === "feishu" ? t("admin.dataSourceFeishuAuthWindowTitle") : "Notion 授权",
+        provider === "feishu" ? t("admin.dataSourceFeishuAuthWindowTitle") : t("admin.dataSourceNotionAuthWindowTitle"),
       );
 
       if (options?.draftWizardOpen === false) {
@@ -2524,6 +2524,21 @@ export default function DataSourceManagement() {
 
           if (oauthAttemptRef.current?.resolved) {
             clearOauthAttempt();
+            return;
+          }
+
+          // Fallback: postMessage may not have been processed yet —
+          // check sessionStorage for OAuth result saved synchronously by callback page.
+          const storedResult = consumeFeishuDataSourceOAuthResult();
+          if (storedResult) {
+            applyOauthResult(storedResult);
+            return;
+          }
+          const storedCloudResult = consumeCloudDataSourceOAuthResult(
+            (options?.draftSelectedType as CloudDataSourceProvider) || "notion",
+          );
+          if (storedCloudResult) {
+            applyOauthResult(storedCloudResult);
             return;
           }
 
@@ -2615,7 +2630,7 @@ export default function DataSourceManagement() {
       message.success(
         cloudSetupProvider === "feishu"
           ? t("admin.dataSourceFeishuCredentialSaved")
-          : "Notion OAuth 凭证已保存",
+          : t("admin.dataSourceNotionCredentialSaved"),
       );
 
       if (shouldStartOAuth) {
@@ -2678,8 +2693,8 @@ export default function DataSourceManagement() {
 
   const handleResetNotionSetup = () => {
     Modal.confirm({
-      title: "重置 Notion OAuth 凭证？",
-      content: "重置后需要重新填写 Client ID / Client Secret 并授权 Notion。",
+      title: t("admin.dataSourceNotionCredentialResetConfirmTitle"),
+      content: t("admin.dataSourceNotionCredentialResetConfirmContent"),
       okText: t("common.confirm"),
       cancelText: t("common.cancel"),
       okButtonProps: { danger: true },
@@ -2693,7 +2708,7 @@ export default function DataSourceManagement() {
         setOauthState("pending");
         setConnectionVerified(false);
         setOauthConnection(null);
-        message.success("Notion OAuth 凭证已重置");
+        message.success(t("admin.dataSourceNotionCredentialReset"));
       },
     });
   };
@@ -3087,7 +3102,7 @@ export default function DataSourceManagement() {
             previousConnection: oauthConnection,
           });
         }
-        message.warning("请先完成 Notion 授权。");
+        message.warning(t("admin.dataSourceNotionAuthRequired"));
         return;
       }
       setWizardStep(1);
@@ -3355,12 +3370,12 @@ export default function DataSourceManagement() {
       "page";
 
     if (!authConnectionId) {
-      message.warning("请先完成 Notion 授权。");
+      message.warning(t("admin.dataSourceNotionAuthRequired"));
       return;
     }
 
     if (targetRefs.length === 0) {
-      message.warning("请粘贴 Notion 页面/数据库链接或 ID。");
+      message.warning(t("admin.dataSourceNotionTargetRequired"));
       return;
     }
 
@@ -3428,7 +3443,7 @@ export default function DataSourceManagement() {
       }
 
       if (!sourceId) {
-        message.error("数据源创建成功但未返回 source id，无法继续配置 Notion 绑定。");
+        message.error(t("admin.dataSourceNotionSourceCreationFailed"));
         return;
       }
 
@@ -3857,14 +3872,16 @@ export default function DataSourceManagement() {
                                     ? oauthConnection.accountName
                                     : t("admin.dataSourceFeishuConnectedAccountFallback"),
                               })
-                            : `已连接 ${notionOauthConnection?.accountName || "Notion workspace"}`
+                            : t("admin.dataSourceNotionConnected", {
+                                account: notionOauthConnection?.accountName || "Notion workspace",
+                              })
                           : isProviderLocked
                             ? isFeishu
                               ? t("admin.dataSourceFeishuLockHint")
-                              : "请先配置 Notion OAuth 应用凭证。"
+                              : t("admin.dataSourceNotionSetupRequiredHint")
                             : isFeishu
                               ? t("admin.dataSourceFeishuAuthReadyHint")
-                              : "凭证已保存，点击完成 Notion 授权。"}
+                              : t("admin.dataSourceNotionAuthPendingHint")}
                       </span>
                     </span>
                     <span className="data-source-provider-card-arrow" aria-hidden="true">
@@ -3981,7 +3998,7 @@ export default function DataSourceManagement() {
                     {isProviderLocked
                       ? isFeishu
                         ? t("admin.dataSourceCreateFeishuAuthRequiredHint")
-                        : "创建 Notion 数据源前需要先配置 OAuth 凭证。"
+                        : t("admin.dataSourceNotionSetupRequiredForCreate")
                       : getSourceTypeDescription(item.type, t)}
                   </span>
                 </span>
@@ -4093,7 +4110,7 @@ export default function DataSourceManagement() {
         title={
           cloudSetupProvider === "feishu"
             ? t("admin.dataSourceFeishuCredentialModalTitle")
-            : "配置 Notion OAuth 应用"
+            : t("admin.dataSourceNotionCredentialModalTitle")
         }
         open={feishuSetupModalOpen}
         destroyOnHidden
@@ -4109,7 +4126,7 @@ export default function DataSourceManagement() {
           feishuSetupIntent
             ? cloudSetupProvider === "feishu"
               ? t("admin.dataSourceFeishuCredentialSaveAndSelect")
-              : "保存并授权 Notion"
+              : t("admin.dataSourceNotionCredentialSaveAndSelect")
             : t("common.save")
         }
         okButtonProps={{ loading: feishuSetupSubmitting }}
@@ -4143,9 +4160,21 @@ export default function DataSourceManagement() {
             message={
               cloudSetupProvider === "feishu"
                 ? t("admin.dataSourceFeishuCredentialHint")
-                : "请填写 Notion public integration 的 Client ID 和 Client Secret；Redirect URI 需配置为 /oauth/notion/data-source/callback。"
+                : t("admin.dataSourceNotionCredentialHint")
             }
           />
+          {cloudSetupProvider !== "feishu" && (
+            <Paragraph style={{ marginTop: 12, marginBottom: 0 }}>
+              <a
+                href="/data-sources/docs/notion-setup?from=create-source"
+                target="_blank"
+                rel="noreferrer"
+              >
+                {t("admin.dataSourceNotionSetupGuideAction")}
+              </a>
+              ：查看详细的 Notion OAuth 配置步骤、所需凭证和 Redirect URI 说明。
+            </Paragraph>
+          )}
         </Form>
       </Modal>
 

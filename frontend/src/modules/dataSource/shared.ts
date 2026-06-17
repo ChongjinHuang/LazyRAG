@@ -432,7 +432,7 @@ export function getSourceTypeTitle(type: SourceType, t: TFunction) {
     return t("admin.dataSourceTypeFeishu");
   }
   if (type === "notion") {
-    return "Notion";
+    return t("admin.dataSourceTypeNotion");
   }
   return type;
 }
@@ -445,7 +445,7 @@ export function getSourceTypeDescription(type: SourceType, t: TFunction) {
     return t("admin.dataSourceTypeFeishuDesc");
   }
   if (type === "notion") {
-    return "连接 Notion 页面或数据库，按授权范围同步并供 Chat 读取。";
+    return t("admin.dataSourceTypeNotionDesc");
   }
   return "";
 }

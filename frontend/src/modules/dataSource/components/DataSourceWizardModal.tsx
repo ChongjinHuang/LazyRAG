@@ -486,7 +486,7 @@ export default function DataSourceWizardModal({
                       {item.type === "feishu" && isFeishuLocked
                         ? t("admin.dataSourceFeishuLockHint")
                         : item.type === "notion" && isNotionLocked
-                          ? "请先配置 Notion OAuth 应用凭证并完成授权。"
+                          ? t("admin.dataSourceNotionSetupRequiredForCreate")
                         : getSourceTypeDescription(item.type, t)}
                     </Text>
                   </button>
@@ -649,9 +649,9 @@ export default function DataSourceWizardModal({
                 ) : (
                   <>
                     <Form.Item
-                      label="Notion 目标类型"
+                      label={t("admin.dataSourceNotionTargetTypeLabel")}
                       name="targetType"
-                      rules={[{ required: true, message: "请选择 Notion 目标类型" }]}
+                      rules={[{ required: true, message: t("admin.dataSourceNotionTargetTypeRequired") }]}
                     >
                       <Radio.Group disabled={isEditMode}>
                         <Radio.Button value="page">Page</Radio.Button>
@@ -659,7 +659,7 @@ export default function DataSourceWizardModal({
                       </Radio.Group>
                     </Form.Item>
                     <Form.Item
-                      label="Notion 页面或数据库"
+                      label={t("admin.dataSourceNotionTargetLabel")}
                       name="target"
                       rules={[
                         {
@@ -669,7 +669,7 @@ export default function DataSourceWizardModal({
                               .map((item) => `${item || ""}`.trim())
                               .filter(Boolean).length > 0
                               ? Promise.resolve()
-                              : Promise.reject(new Error("请粘贴 Notion 页面/数据库链接或 ID"));
+                              : Promise.reject(new Error(t("admin.dataSourceNotionTargetRequired")));
                           },
                         },
                       ]}
