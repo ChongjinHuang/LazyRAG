@@ -36,9 +36,6 @@ import {
   type CloudConnectionResponse,
   type CloudOAuthAppCredentialBody,
 } from "@/api/generated/auth-client";
-import {
-  type Dataset as CoreDataset,
-} from "@/api/generated/core-client";
 import { AgentAppsAuth } from "@/components/auth";
 import { getLocalizedErrorMessage } from "@/components/request";
 import {
@@ -207,10 +204,6 @@ function buildSchedulePolicy(scheduleWeekdays?: string[], scheduleTime?: string)
   };
 }
 
-function normalizeKnowledgeBaseName(value?: string) {
-  return `${value || ""}`.trim().toLowerCase();
-}
-
 function resolveSourceTypeFromValues(
   fallbackType: SourceType | null,
   values: SourceFormValues,
@@ -228,14 +221,6 @@ function resolveSourceTypeFromValues(
     return "feishu";
   }
   return fallbackType;
-}
-
-function getDatasetDisplayName(dataset: CoreDataset) {
-  return `${dataset.display_name || dataset.name || ""}`.trim();
-}
-
-function isDataSourceManagedDataset(dataset: CoreDataset) {
-  return Boolean(dataset.scan_managed || dataset.scan_source_type);
 }
 
 function loadLocalScanChatEnabled() {
@@ -385,13 +370,19 @@ function mapCloudConnectionToFeishuAccount(
     cachedAccount?.name ||
     appId;
   const status = normalizeFeishuAccountStatus(connection.status);
+  const providerOptions = connection.provider_options || {};
+  const serverChatEnabled =
+    providerOptions.chat_enabled ?? providerOptions.chatEnabled ??
+    providerMeta.chat_enabled ?? providerMeta.chatEnabled;
+  const rawChatEnabled =
+    serverChatEnabled != null ? Boolean(serverChatEnabled) : (cachedAccount?.chatEnabled ?? false);
 
   return {
     id: connection.connection_id,
     name: displayName,
     appId,
     appSecret: cachedAccount?.appSecret || "",
-    chatEnabled: cachedAccount?.chatEnabled ?? false,
+    chatEnabled: status === "connected" ? rawChatEnabled : false,
     status,
     connection: {
       provider: "feishu",
@@ -463,6 +454,7 @@ async function listKnowledgeBaseNames(client = dataSourceDatasetsApi) {
 
   return names;
 }
+
 
 async function listDefaultKnowledgeBaseIds(client = dataSourceDatasetsApi) {
   const ids: string[] = [];
@@ -955,7 +947,6 @@ export default function DataSourceManagement() {
     (item) => !item.adminOnly || canCreateLocalSource,
   );
   const scanAgents: ScanV2AgentHint[] = [];
-  const [knowledgeBaseNames, setKnowledgeBaseNames] = useState<string[]>([]);
   const [defaultDatasetIds, setDefaultDatasetIds] = useState<string[]>([]);
   const [localScanChatEnabled, setLocalScanChatEnabled] = useState(
     loadLocalScanChatEnabled,
@@ -964,6 +955,7 @@ export default function DataSourceManagement() {
   const [scanLoading, setScanLoading] = useState(false);
   const [validatedAgentId, setValidatedAgentId] = useState<string | null>(null);
   const [wizardSaving, setWizardSaving] = useState(false);
+  const [wizardSavingMode, setWizardSavingMode] = useState<DataSourceSaveMode | null>(null);
   const [localPathOptions, setLocalPathOptions] = useState<LocalPathTreeNode[]>([]);
   const [localPathLoading, setLocalPathLoading] = useState(false);
   const localPathRequestSeqRef = useRef(0);
@@ -1967,14 +1959,6 @@ export default function DataSourceManagement() {
     }
   };
 
-  const refreshKnowledgeBaseNames = async () => {
-    try {
-      setKnowledgeBaseNames(await listKnowledgeBaseNames());
-    } catch (error) {
-      console.error("Failed to refresh knowledge base names", error);
-    }
-  };
-
   const refreshFeishuAuthAccounts = async () => {
     try {
       const response =
@@ -2245,7 +2229,6 @@ export default function DataSourceManagement() {
 
   useEffect(() => {
     void refreshSources(false);
-    void refreshKnowledgeBaseNames();
     void refreshFeishuAuthAccounts();
     void refreshNotionAuthConnection();
   }, []);
@@ -2288,13 +2271,6 @@ export default function DataSourceManagement() {
     },
     [],
   );
-
-  const getKnownKnowledgeBaseNames = () => [
-    ...knowledgeBaseNames,
-    ...sources
-      .filter((item) => item.status === "active")
-      .map((item) => item.knowledgeBase),
-  ];
 
   const resetWizard = () => {
     form.resetFields();
@@ -3062,7 +3038,6 @@ export default function DataSourceManagement() {
               : sourceListPage;
           await Promise.all([
             refreshSources(false, { page: nextPage }),
-            refreshKnowledgeBaseNames(),
           ]);
         } catch (error) {
           message.error(
@@ -3073,39 +3048,6 @@ export default function DataSourceManagement() {
         }
       },
     });
-  };
-
-  const ensureKnowledgeBaseNameUnique = async (value?: string) => {
-    if (wizardMode === "edit") {
-      return true;
-    }
-
-    const normalizedValue = normalizeKnowledgeBaseName(value);
-    if (!normalizedValue) {
-      return false;
-    }
-
-    const duplicateMessage = t("admin.dataSourceKnowledgeBaseNameDuplicated");
-    const knownNameSet = new Set(
-      getKnownKnowledgeBaseNames().map(normalizeKnowledgeBaseName).filter(Boolean),
-    );
-    if (knownNameSet.has(normalizedValue)) {
-      form.setFields([{ name: "knowledgeBase", errors: [duplicateMessage] }]);
-      return false;
-    }
-
-    try {
-      const latestNames = await listKnowledgeBaseNames();
-      setKnowledgeBaseNames(latestNames);
-      if (latestNames.map(normalizeKnowledgeBaseName).includes(normalizedValue)) {
-        form.setFields([{ name: "knowledgeBase", errors: [duplicateMessage] }]);
-        return false;
-      }
-    } catch (error) {
-      console.error("Failed to validate knowledge base name", error);
-    }
-
-    return true;
   };
 
   const handleNextStep = () => {
@@ -3528,6 +3470,7 @@ export default function DataSourceManagement() {
     }
 
     setWizardSaving(true);
+    setWizardSavingMode(saveMode);
     try {
       const syncStrategyFields =
         form.getFieldValue("syncMode") === "scheduled"
@@ -3552,13 +3495,6 @@ export default function DataSourceManagement() {
         return;
       }
 
-      if (
-        wizardMode !== "edit" &&
-        !(await ensureKnowledgeBaseNameUnique(values.knowledgeBase))
-      ) {
-        return;
-      }
-
       if (effectiveSourceType === "local") {
         await handleSaveLocalSource(values, saveMode);
         return;
@@ -3570,6 +3506,7 @@ export default function DataSourceManagement() {
       await handleSaveFeishuSource(values, saveMode);
     } finally {
       setWizardSaving(false);
+      setWizardSavingMode(null);
     }
   };
 
@@ -4232,13 +4169,13 @@ export default function DataSourceManagement() {
         wizardOpen={wizardOpen}
         wizardStep={wizardStep}
         form={form}
-        existingKnowledgeBaseNames={getKnownKnowledgeBaseNames()}
         selectedType={selectedType}
         isFeishuSetupReady={isFeishuSetupReady}
         isNotionSetupReady={isNotionSetupReady}
         connectionVerified={connectionVerified}
         syncMode={syncMode}
         saving={wizardSaving}
+        savingMode={wizardSavingMode || undefined}
         localPathOptions={localPathOptions}
         localPathLoading={localPathLoading}
         feishuTargetLoading={feishuTargetLoading}
