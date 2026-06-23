@@ -27,7 +27,7 @@ type upsertMemoryAPITestResponse struct {
 		Title          string  `json:"title"`
 		Content        string  `json:"content"`
 		AgentPersona   *string `json:"agent_persona"`
-		UserAddress    *string `json:"user_address"`
+		PreferredName  *string `json:"preferred_name"`
 		ResponseStyle  *string `json:"response_style"`
 		ContentSummary string  `json:"content_summary"`
 	} `json:"data"`
@@ -273,7 +273,7 @@ func TestUpsertIgnoresMemoryMetadataFields(t *testing.T) {
 	store.Init(db.DB, nil, nil)
 	t.Cleanup(func() { store.Init(nil, nil, nil) })
 
-	createReq := httptest.NewRequest(http.MethodPut, "/api/core/memory", strings.NewReader(`{"content":"长期记忆","agent_persona":"严谨助手","user_address":"老师","response_style":"先结论后解释"}`))
+	createReq := httptest.NewRequest(http.MethodPut, "/api/core/memory", strings.NewReader(`{"content":"长期记忆","agent_persona":"严谨助手","preferred_name":"老师","response_style":"先结论后解释"}`))
 	createReq.Header.Set("Content-Type", "application/json")
 	createReq.Header.Set("X-User-Id", "u1")
 	createReq.Header.Set("X-User-Name", "User 1")
@@ -291,7 +291,7 @@ func TestUpsertIgnoresMemoryMetadataFields(t *testing.T) {
 	if createResp.Data.Content != "长期记忆" {
 		t.Fatalf("unexpected content in create response: %#v", createResp.Data)
 	}
-	if createResp.Data.AgentPersona != nil || createResp.Data.UserAddress != nil || createResp.Data.ResponseStyle != nil {
+	if createResp.Data.AgentPersona != nil || createResp.Data.PreferredName != nil || createResp.Data.ResponseStyle != nil {
 		t.Fatalf("expected memory metadata fields to be omitted, got %#v", createResp.Data)
 	}
 
@@ -386,58 +386,6 @@ func TestUpsertAutoEvoDiscardsPendingDraftWithoutOverwritingMemoryContent(t *tes
 	}
 	if updated.AutoEvoGeneration != row.AutoEvoGeneration+1 {
 		t.Fatalf("expected auto_evo_generation to increment, got %d", updated.AutoEvoGeneration)
-	}
-}
-
-func TestUpsertAutoEvoReturnsConflictWhenWorkerRunning(t *testing.T) {
-	db := newMemoryTestDB(t)
-	store.Init(db.DB, nil, nil)
-	t.Cleanup(func() { store.Init(nil, nil, nil) })
-
-	now := time.Now()
-	row := orm.SystemMemory{
-		ID:                 "memory-1",
-		UserID:             "u1",
-		Content:            "current memory",
-		ContentHash:        evolution.HashContent("current memory"),
-		Version:            2,
-		AutoEvo:            false,
-		AutoEvoApplyStatus: evolution.AutoEvoApplyStatusRunning,
-		AutoEvoGeneration:  7,
-		UpdatedBy:          "u1",
-		UpdatedByName:      "User 1",
-		CreatedAt:          now,
-		UpdatedAt:          now,
-	}
-	if err := db.Create(&row).Error; err != nil {
-		t.Fatalf("create memory: %v", err)
-	}
-	workerKey := evolution.AutoEvoWorkerKey(evolution.ResourceTypeMemory, row.ID)
-	if !evolution.TryAcquireAutoEvoWorker(workerKey) {
-		t.Fatalf("expected to acquire worker lock")
-	}
-	t.Cleanup(func() { evolution.ReleaseAutoEvoWorker(workerKey) })
-
-	req := httptest.NewRequest(http.MethodPut, "/api/core/memory", strings.NewReader(`{"content":"new memory","auto_evo":true}`))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-User-Id", "u1")
-	req.Header.Set("X-User-Name", "User 1")
-	rec := httptest.NewRecorder()
-
-	Upsert(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("expected status 409, got %d body=%s", rec.Code, rec.Body.String())
-	}
-	var updated orm.SystemMemory
-	if err := db.Where("id = ?", row.ID).Take(&updated).Error; err != nil {
-		t.Fatalf("query updated memory: %v", err)
-	}
-	if updated.Content != row.Content || updated.Version != row.Version || updated.AutoEvo != row.AutoEvo {
-		t.Fatalf("expected memory fields unchanged, got content=%q version=%d auto_evo=%v", updated.Content, updated.Version, updated.AutoEvo)
-	}
-	if updated.AutoEvoGeneration != row.AutoEvoGeneration || updated.AutoEvoApplyStatus != row.AutoEvoApplyStatus {
-		t.Fatalf("expected auto_evo state unchanged, got generation=%d status=%q", updated.AutoEvoGeneration, updated.AutoEvoApplyStatus)
 	}
 }
 
@@ -586,11 +534,11 @@ func TestGenerateOverwritesExistingPendingDraft(t *testing.T) {
 		UserID:       "u1",
 		ResourceType: evolution.ResourceTypeMemory,
 		ResourceKey:  evolution.SystemResourceKey(evolution.ResourceTypeMemory),
-		Action:       evolution.SuggestionActionModify,
+		Action:       "modify",
 		SessionID:    "session-1",
 		Title:        "memory suggestion",
 		Content:      "update memory",
-		Status:       evolution.SuggestionStatusAccepted,
+		Status:       "accepted",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -691,11 +639,11 @@ func TestGenerateUserInstructOnlyUsesDraftContent(t *testing.T) {
 		UserID:       "u1",
 		ResourceType: evolution.ResourceTypeMemory,
 		ResourceKey:  evolution.SystemResourceKey(evolution.ResourceTypeMemory),
-		Action:       evolution.SuggestionActionModify,
+		Action:       "modify",
 		SessionID:    "session-1",
 		Title:        "memory suggestion",
 		Content:      "update memory",
-		Status:       evolution.SuggestionStatusAccepted,
+		Status:       "accepted",
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}

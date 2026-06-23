@@ -191,7 +191,7 @@ func EnsureSystemUserPreference(ctx context.Context, db *gorm.DB, userID, userNa
 		UserID:        userID,
 		Content:       firstNonEmpty(seed.Content, ""),
 		AgentPersona:  seed.AgentPersona,
-		UserAddress:   seed.UserAddress,
+		PreferredName: seed.PreferredName,
 		ResponseStyle: seed.ResponseStyle,
 		Version:       maxInt64(1, seed.Version),
 		AutoEvo:       true,
@@ -442,28 +442,6 @@ func LoadParentSkillState(ctx context.Context, db *gorm.DB, userID, category, sk
 		return nil, err
 	}
 	return skillStateFromResource(&skill)
-}
-
-func BuildSuggestionRecord(
-	userID string,
-	resourceType string,
-	resourceKey string,
-	action string,
-	sessionID string,
-	status string,
-) orm.ResourceSuggestion {
-	now := time.Now()
-	return orm.ResourceSuggestion{
-		ID:           newUUID(),
-		UserID:       strings.TrimSpace(userID),
-		ResourceType: strings.TrimSpace(resourceType),
-		ResourceKey:  strings.TrimSpace(resourceKey),
-		Action:       strings.TrimSpace(action),
-		SessionID:    strings.TrimSpace(sessionID),
-		Status:       strings.TrimSpace(status),
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
 }
 
 func skillStateFromResource(skill *orm.SkillResource) (*SkillState, error) {

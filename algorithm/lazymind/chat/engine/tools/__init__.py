@@ -7,6 +7,7 @@ registration side effects happen in one consistent place.
 from .calculator import calculator
 from .kb import KBToolGroup, TempKBToolGroup
 from .memory_editor import memory_editor
+from .memory_reader import read_memory
 from .multimodal import image_editor, image_generator, vision_extractor
 from .online_search import OnlineSearchToolGroup
 from .skill_editor import skill_editor
@@ -21,6 +22,7 @@ __all__ = [
     'OnlineSearchToolGroup',
     'TempKBToolGroup',
     'memory_editor',
+    'read_memory',
     'vision_extractor',
     'skill_editor',
     'vocab_learn',

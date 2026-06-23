@@ -15,12 +15,13 @@ PERMISSIONS = {
     **dict.fromkeys(('read', 'grep', 'glob', 'list', 'bash', 'edit', 'external_directory'), 'allow'),
     **dict.fromkeys(('question', 'plan_enter', 'plan_exit', 'todowrite', 'task'), 'deny'),
 }
-PASSTHROUGH_PREFIXES = ('ANTHROPIC_', 'AZURE_', 'COHERE_', 'GOOGLE_', 'GROQ_', 'LAZYLLM_', 'LAZYMIND_EVO_CODE_',
-                        'MISTRAL_', 'OPENAI_', 'OPENCODE_', 'QWEN_', 'DEEPSEEK_')
-DEFAULT_BASE_URLS = {
-    'qwen': 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    'deepseek': 'https://api.deepseek.com',
-    'openai': 'https://api.openai.com/v1',
+OPENCODE_CONFIG_KEYS = {
+    'OPENCODE_MODEL',
+    'OPENCODE_PROVIDER',
+    'OPENCODE_PROVIDER_MODEL',
+    'OPENCODE_PROVIDER_LABEL',
+    'OPENCODE_PROVIDER_BASE_URL',
+    'OPENCODE_PROVIDER_KEY_ENV',
 }
 
 
@@ -54,6 +55,9 @@ def run_opencode_streaming(*, container: str, workdir: str, prompt: str, artifac
         return _result(1, session_id, events, paths, prompt_arg, error, started,
                        setup if setup is not None else time.time(), None, safe_env)
 
+    if missing := _missing_config(safe_env):
+        return fail('configuration_error', f'missing opencode config fields: {", ".join(missing)}')
+
     try:
         artifact_dir.mkdir(parents=True, exist_ok=True)
     except Exception as exc:
@@ -82,10 +86,11 @@ def run_opencode_streaming(*, container: str, workdir: str, prompt: str, artifac
     try:
         proc = subprocess.Popen(_cmd(container, run_workdir, prompt_arg, session_id, safe_env),
                                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1,
-                                env={**os.environ, **safe_env}, start_new_session=True)
+                                env=_process_env(safe_env), start_new_session=True)
     except Exception as exc:
         return fail('process_start_failed', exc, prompt_arg, setup_done)
-    if register_cancel: register_cancel(lambda: _terminate(proc))
+    if register_cancel:
+        register_cancel(lambda: _terminate(proc))
 
     session, error, first, heartbeat = session_id, None, None, setup_done
     while proc.poll() is None:
@@ -189,15 +194,18 @@ def trace_payload(result: Any, repair_plan_ref: str, attempt: int, artifact_id: 
 def _read_line(line: str, stdout: list[str], events: list[dict[str, Any]], session: str,
                error: dict[str, Any] | None, first: float | None, start: float, secrets: list[str],
                on_event: Any) -> tuple[str, dict[str, Any] | None, float | None]:
-    if not line: return session, error, first
+    if not line:
+        return session, error, first
     stdout.append(_clean_obj(line, secrets))
     try:
         event = _clean_obj(json.loads(line), secrets)
     except json.JSONDecodeError:
         text = _clean_obj(line.strip(), secrets)
-        if text: _push({'type': 'stdout', 'status': 'running', 'message': str(text)[:300]}, events, on_event)
+        if text:
+            _push({'type': 'stdout', 'status': 'running', 'message': str(text)[:300]}, events, on_event)
         return session, error, first
-    if not isinstance(event, dict): return session, error, first
+    if not isinstance(event, dict):
+        return session, error, first
     _push(event, events, on_event)
     if first is None and (_tool(event) or _text(event) or str(event.get('type') or '').lower() == 'error'):
         first = round(time.time() - start, 3)
@@ -216,39 +224,42 @@ def _cmd(container: str, workdir: str, prompt: str, session: str, env: dict[str,
     # Permissions come from the explicit allow/deny config written to opencode.json,
     # never from --dangerously-skip-permissions.
     args = ['opencode', 'run', '--format', 'json']
-    if env.get('OPENCODE_MODEL'): args += ['--model', env['OPENCODE_MODEL']]
-    if session: args += ['--session', session]
+    if env.get('OPENCODE_MODEL'):
+        args += ['--model', env['OPENCODE_MODEL']]
+    if session:
+        args += ['--session', session]
     command = f"cd {shlex.quote(workdir)} && {_config_cmd(env)} {' '.join(shlex.quote(x) for x in [*args, prompt])}"
     flags = [item for key, value in env.items() if value for item in ('-e', key)]
-    if container: return ['docker', 'exec', '-i', *flags, container, 'sh', '-lc', command]
+    if container:
+        return ['docker', 'exec', '-i', *flags, container, 'sh', '-lc', command]
     return ['sh', '-lc', command]
 
 
 def _opencode_env(raw: dict[str, str]) -> dict[str, str]:
-    env = {k: v for k, v in raw.items() if v and k.startswith(PASSTHROUGH_PREFIXES)}
-    model_ref = str(raw.get('LAZYMIND_EVO_CODE_MODEL') or raw.get('OPENCODE_MODEL') or '').strip()
-    provider = str(raw.get('LAZYMIND_EVO_CODE_PROVIDER') or '').strip()
-    model = model_ref
-    if '/' in model_ref and not provider: provider, model = model_ref.split('/', 1)
-    provider = ''.join(ch.lower() if ch.isalnum() else '_' for ch in provider).strip('_')
-    safe = ''.join(ch if ch.isalnum() else '_' for ch in provider.upper())
-    key_env, base_env = f'OPENCODE_{safe}_API_KEY', f'OPENCODE_{safe}_BASE_URL'
-    api_key = (raw.get('LAZYMIND_EVO_CODE_API_KEY') or raw.get(key_env) or raw.get(f'LAZYLLM_{safe}_API_KEY')
-               or raw.get(f'{safe}_API_KEY') or '')
-    base_url = raw.get('LAZYMIND_EVO_CODE_BASE_URL') or raw.get(base_env) or DEFAULT_BASE_URLS.get(provider, '')
-    if provider and model:
-        env.update({
-            'OPENCODE_MODEL': f'{provider}/{model}',
-            'OPENCODE_PROVIDER': provider,
-            'OPENCODE_PROVIDER_MODEL': model,
-            'OPENCODE_PROVIDER_LABEL': str(raw.get('LAZYMIND_EVO_CODE_LABEL') or provider).strip(),
-            'OPENCODE_PROVIDER_KEY_ENV': key_env,
-        })
-    if provider and api_key:
-        env[key_env] = api_key
-        env.setdefault(f'{safe}_API_KEY', api_key)
-    if provider and base_url: env['OPENCODE_PROVIDER_BASE_URL'] = base_url.rstrip('/')
-    return {key: value for key, value in env.items() if value}
+    key_env = str(raw.get('OPENCODE_PROVIDER_KEY_ENV') or '').strip()
+    allowed = OPENCODE_CONFIG_KEYS | ({key_env} if key_env else set())
+    return {key: str(value).strip() for key, value in raw.items() if key in allowed and str(value).strip()}
+
+
+def _missing_config(env: dict[str, str]) -> list[str]:
+    required = [
+        'OPENCODE_MODEL',
+        'OPENCODE_PROVIDER',
+        'OPENCODE_PROVIDER_MODEL',
+        'OPENCODE_PROVIDER_BASE_URL',
+        'OPENCODE_PROVIDER_KEY_ENV',
+    ]
+    missing = [key for key in required if not env.get(key)]
+    key_env = env.get('OPENCODE_PROVIDER_KEY_ENV', '')
+    if key_env and not env.get(key_env):
+        missing.append(key_env)
+    return missing
+
+
+def _process_env(safe_env: dict[str, str]) -> dict[str, str]:
+    base_keys = ('HOME', 'PATH', 'SHELL', 'USER', 'LANG', 'LC_ALL', 'TMPDIR', 'SSL_CERT_FILE', 'REQUESTS_CA_BUNDLE')
+    base = {key: value for key in base_keys if (value := os.environ.get(key))}
+    return {**base, **safe_env}
 
 
 def _config_cmd(env: dict[str, str]) -> str:
@@ -256,11 +267,19 @@ def _config_cmd(env: dict[str, str]) -> str:
     base_url, key_env = env.get('OPENCODE_PROVIDER_BASE_URL', ''), env.get('OPENCODE_PROVIDER_KEY_ENV', '')
     config: dict[str, Any] = {'$schema': 'https://opencode.ai/config.json', 'permission': PERMISSIONS}
     if provider and model and base_url and key_env and env.get(key_env):
+        # Custom base URLs (inner lazyllm, proxies) must use chat-completions via
+        # openai-compatible; @ai-sdk/openai routes through Responses API which inner
+        # endpoints reject for tool use.
+        official = base_url.rstrip('/').endswith('api.openai.com/v1')
+        npm = '@ai-sdk/openai' if provider == 'openai' and official else '@ai-sdk/openai-compatible'
+        model_cfg: dict[str, Any] = {'name': model, 'tool_call': True}
+        if not official:
+            model_cfg['limit'] = {'context': 32768, 'output': 1024}
         config['provider'] = {provider: {
-            'npm': '@ai-sdk/openai-compatible',
+            'npm': npm,
             'name': env.get('OPENCODE_PROVIDER_LABEL') or provider,
             'options': {'baseURL': base_url, 'apiKey': f'{{env:{key_env}}}'},
-            'models': {model: {'name': model}},
+            'models': {model: model_cfg},
         }}
     return f'printf %s {shlex.quote(json.dumps(config, ensure_ascii=False))} > opencode.json;'
 
@@ -289,7 +308,8 @@ def _ui(index: int, event: dict[str, Any]) -> dict[str, Any] | None:
         'process_start': 'process', 'process_exit': 'process', 'sync_back': 'sync', 'stdout': 'agent_note',
     }.get(etype)
     kind = kind or ('agent_note' if event.get('summary') and etype == 'text' else '')
-    if not kind: return None
+    if not kind:
+        return None
     title = {
         'search': '查找文件',
         'read_file': f"读取 {paths[0] if paths else '文件'}",
@@ -326,7 +346,8 @@ def _paths(value: Any) -> list[str]:
         return [item for key, child in value.items()
                 for item in ([child] if key in {'file', 'path', 'filepath', 'filePath'} and isinstance(child, str)
                              else _paths(child))]
-    if isinstance(value, list): return [item for child in value for item in _paths(child)]
+    if isinstance(value, list):
+        return [item for child in value for item in _paths(child)]
     return []
 
 
@@ -384,12 +405,14 @@ def _sync_back(container: str, run_workdir: str, host_workdir: Path) -> None:
 
 def _run(cmd: list[str], timeout: int = 30) -> str:
     result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, check=False)
-    if result.returncode: raise RuntimeError((result.stderr or result.stdout).strip())
+    if result.returncode:
+        raise RuntimeError((result.stderr or result.stdout).strip())
     return result.stdout
 
 
 def _rm(path: Path) -> None:
-    if path.exists(): shutil.rmtree(path)
+    if path.exists():
+        shutil.rmtree(path)
 
 
 def _prompt_arg(prompt_path: Path, host_workdir: Path | None, workdir: str) -> str:
@@ -418,13 +441,16 @@ def _diagnosis(result: Any) -> dict[str, Any]:
 
 
 def _mapping_status(result: Any, modified: list[str]) -> str:
-    if result.session_id and result.events: return 'complete'
-    if modified: return 'events_and_diff'
+    if result.session_id and result.events:
+        return 'complete'
+    if modified:
+        return 'events_and_diff'
     return 'failed' if result.last_error else 'events_only'
 
 
 def _terminate(proc: subprocess.Popen, grace_s: float = 5.0) -> None:
-    if proc.poll() is not None: return
+    if proc.poll() is not None:
+        return
     for sig, stop in ((signal.SIGTERM, proc.terminate), (signal.SIGKILL, proc.kill)):
         try:
             os.killpg(os.getpgid(proc.pid), sig)
@@ -442,8 +468,10 @@ def _clean_obj(value: Any, secrets: list[str]) -> Any:
         for secret in secrets:
             value = value.replace(secret, '<redacted>')
         return value
-    if isinstance(value, list): return [_clean_obj(item, secrets) for item in value]
-    if isinstance(value, dict): return {key: _clean_obj(item, secrets) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_clean_obj(item, secrets) for item in value]
+    if isinstance(value, dict):
+        return {key: _clean_obj(item, secrets) for key, item in value.items()}
     return value
 
 
