@@ -9,10 +9,11 @@ wiki or Notion workspace.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 import lazyllm
-from lazyllm.tools.fs.supplier.feishu import FeishuWikiFS
+from lazyllm.tools.fs.supplier.feishu import FeishuFS, FeishuWikiFS
 from lazyllm.tools.fs.supplier.notion import NotionFS
 
 from lazymind.chat.engine.tools.infra import handle_tool_errors, tool_success
@@ -24,7 +25,7 @@ _DEFAULT_FIND_MAX_RESULTS = 20
 
 def _get_feishu_fs() -> FeishuWikiFS:
     """Return a FeishuWikiFS instance with per-request dynamic auth."""
-    return FeishuWikiFS(space_id='dynamic', dynamic_auth=True)
+    return FeishuFS(space_id='dynamic', dynamic_auth=True)
 
 
 def _get_notion_fs() -> NotionFS:
@@ -45,6 +46,20 @@ def _normalize_sources(sources: Optional[List[str]]) -> List[str]:
     return normalized if normalized else ['feishu', 'notion']
 
 
+def _filter_by_title_pattern(items: List[Dict[str, Any]], pattern: str) -> List[Dict[str, Any]]:
+    pattern = (pattern or '').strip()
+    if not pattern:
+        return items
+    try:
+        regex = re.compile(pattern, re.IGNORECASE)
+    except re.error as exc:
+        raise ValueError(f'Invalid filename_scope regex pattern: {exc}') from exc
+    return [
+        item for item in items
+        if regex.search(item.get('title') or item.get('name') or '')
+    ]
+
+
 class OnlineSearchToolGroup:
     """Search online Feishu wiki and Notion knowledge bases.
 
@@ -62,6 +77,9 @@ class OnlineSearchToolGroup:
         query: str,
         sources: Optional[List[str]] = None,
         scope: str = '',
+        filename_scope: str = '',
+        feishu_space_id: str = '',
+        notion_scope: str = '',
         max_results: int = _DEFAULT_MAX_RESULTS,
     ) -> Dict[str, Any]:
         """Search online Feishu wiki and/or Notion for content matching keywords.
@@ -80,9 +98,16 @@ class OnlineSearchToolGroup:
             sources: Which sources to search. Options: ['feishu', 'notion'].
                 Defaults to both.  Pass ['feishu'] for Feishu wiki only, or
                 ['notion'] for Notion only.
-            scope: Optional scope limitation. For Feishu this can be a
-                space_id to restrict to a specific wiki space. For Notion
-                this is currently unused.
+            scope: Backward-compatible Feishu wiki space_id. Prefer
+                feishu_space_id for new calls.
+            filename_scope: Optional filename/title regex. The search still
+                uses the official online APIs, then filters returned document
+                titles by this regex.
+            feishu_space_id: Optional Feishu wiki space_id. Feishu search uses
+                the official wiki/v2/spaces/{space_id}/search API.
+            notion_scope: Optional Notion database or data_source id/path
+                (for example notion:/~data_source/<id>) to restrict search to
+                one Notion knowledge base.
             max_results: Maximum total results (default 10, max 50).
 
         Returns:
@@ -97,13 +122,15 @@ class OnlineSearchToolGroup:
 
         result: Dict[str, Any] = {}
         per_source = max(1, max_results // len(sources))
+        feishu_scope = feishu_space_id or scope
 
         if 'feishu' in sources:
             try:
                 fs = _get_feishu_fs()
                 feishu_results = fs.search(
-                    query, space_id=scope, page_size=per_source,
+                    query, space_id=feishu_scope, page_size=per_source,
                 )
+                feishu_results = _filter_by_title_pattern(feishu_results, filename_scope)
                 result['feishu'] = {
                     'total': len(feishu_results),
                     'items': feishu_results,
@@ -119,7 +146,10 @@ class OnlineSearchToolGroup:
         if 'notion' in sources:
             try:
                 fs = _get_notion_fs()
-                notion_results = fs.search(query, limit=per_source)
+                notion_results = fs.search(
+                    query, limit=per_source, scope=notion_scope,
+                    title_pattern=filename_scope,
+                )
                 result['notion'] = {
                     'total': len(notion_results),
                     'items': notion_results,
@@ -140,6 +170,8 @@ class OnlineSearchToolGroup:
         pattern: str,
         sources: Optional[List[str]] = None,
         scope: str = '',
+        feishu_space_id: str = '',
+        notion_scope: str = '',
         max_results: int = _DEFAULT_FIND_MAX_RESULTS,
     ) -> Dict[str, Any]:
         """Find files/documents by name pattern (regex) in Feishu wiki and/or Notion.
@@ -158,8 +190,10 @@ class OnlineSearchToolGroup:
                 titles. Case-insensitive.
             sources: Which sources to search. Options: ['feishu', 'notion'].
                 Defaults to both.
-            scope: Optional scope limitation. For Feishu this can be a
-                space_id. For Notion this is currently unused.
+            scope: Backward-compatible Feishu wiki space_id. Prefer
+                feishu_space_id for new calls.
+            feishu_space_id: Optional Feishu wiki space_id.
+            notion_scope: Optional Notion database or data_source id/path.
             max_results: Maximum total results (default 20, max 100).
 
         Returns:
@@ -174,12 +208,13 @@ class OnlineSearchToolGroup:
 
         result: Dict[str, Any] = {}
         per_source = max(1, max_results // len(sources))
+        feishu_scope = feishu_space_id or scope
 
         if 'feishu' in sources:
             try:
                 fs = _get_feishu_fs()
                 feishu_results = fs.find(
-                    pattern, space_id=scope, max_results=per_source,
+                    pattern, space_id=feishu_scope, max_results=per_source,
                 )
                 result['feishu'] = {
                     'total': len(feishu_results),
@@ -196,7 +231,7 @@ class OnlineSearchToolGroup:
         if 'notion' in sources:
             try:
                 fs = _get_notion_fs()
-                notion_results = fs.find(pattern, limit=per_source)
+                notion_results = fs.find(pattern, limit=per_source, scope=notion_scope)
                 result['notion'] = {
                     'total': len(notion_results),
                     'items': notion_results,
