@@ -156,9 +156,10 @@ _TOOL_CALL_PREVIEW_TEMPLATES: dict[str, str] = {
     'advance_step': 'Switching to step {value}.',
     'search_online': 'Searching online knowledge bases for {value}.',
     'find_online': 'Finding documents matching pattern {value} in online knowledge bases.',
+    'regex:get_(.+)_methods': 'Expanding the {match} tool group.',
     'regex:trigger_(.+)_plugin': 'Loading the {match} plugin now.',
 }
-_TOOL_CALL_FALLBACK_TEMPLATE = 'Calling a tool to handle the request.'
+_TOOL_CALL_FALLBACK_TEMPLATE = 'Calling {tool_name} to handle the request.'
 
 _ZH_TOOL_CALL_PREVIEW_TEMPLATES: dict[str, str] = {
     'kb_search': '正在知识库中检索与 {value} 相关的知识。',
@@ -211,9 +212,10 @@ _ZH_TOOL_CALL_PREVIEW_TEMPLATES: dict[str, str] = {
     'search_online': '正在在线知识库中搜索 {value}。',
     'find_online': '正在在线知识库中按文件名模式 {value} 查找文档。',
     'advance_step': '正在切换到步骤 {value}...',
+    'regex:get_(.+)_methods': '正在展开{match}工具组。',
     'regex:trigger_(.+)_plugin': '正在加载 {match} 插件...',
 }
-_ZH_TOOL_CALL_FALLBACK_TEMPLATE = '正在调用工具处理请求...'
+_ZH_TOOL_CALL_FALLBACK_TEMPLATE = '正在调用工具 {tool_name}...'
 
 _TOOL_RESULT_PREVIEW_TEMPLATES: dict[str, str] = {
     'kb_search': 'Knowledge base results for {value} are ready now.',
@@ -268,6 +270,7 @@ _TOOL_RESULT_PREVIEW_TEMPLATES: dict[str, str] = {
     'search_online': 'Online search results for {value} are ready now.',
     'find_online': 'Documents matching pattern {value} were found in online knowledge bases.',
     'advance_step': 'Plugin launched.',
+    'regex:get_(.+)_methods': 'The {match} tool group has been expanded.',
     'regex:trigger_(.+)_plugin': 'Plugin launched.',
 }
 
@@ -322,6 +325,7 @@ _ZH_TOOL_RESULT_PREVIEW_TEMPLATES: dict[str, str] = {
     'search_online': '已查询到 {value} 的在线知识库搜索结果。',
     'find_online': '已在在线知识库中找到匹配模式 {value} 的文档。',
     'advance_step': '插件已启动',
+    'regex:get_(.+)_methods': '已经展开{match}工具组。',
     'regex:trigger_(.+)_plugin': '插件已启动',
 }
 
@@ -376,6 +380,7 @@ _TOOL_RESULT_FAILURE_TEMPLATES: dict[str, str] = {
     'search_online': 'Online search for {value} could not be retrieved.',
     'find_online': 'Documents matching pattern {value} could not be found in online knowledge bases.',
     'advance_step': 'Step {value} could not be started.',
+    'regex:get_(.+)_methods': 'The {match} tool group could not be expanded.',
     'regex:trigger_(.+)_plugin': 'Failed to load the {match} plugin.',
 }
 
@@ -428,6 +433,7 @@ _ZH_TOOL_RESULT_FAILURE_TEMPLATES: dict[str, str] = {
     'FeishuWikiFS_move': '未能将飞书文件从 {value} 移动到目标路径。',
     'FeishuWikiFS_copy': '未能将飞书文件从 {value} 复制到目标路径。',
     'advance_step': '步骤 {value} 启动失败',
+    'regex:get_(.+)_methods': '未能展开{match}工具组。',
     'regex:trigger_(.+)_plugin': '{match} 插件加载失败',
 }
 
@@ -595,14 +601,14 @@ _ZH_TOOL_RESULT_APPROVAL_TEMPLATES.update({
     'NotionFS_write': '写入这个 Notion 页面前，请先确认提示“{value}”。',
 })
 
-_TOOL_RESULT_FALLBACK_TEMPLATE = 'Tool processing has finished.'
-_TOOL_RESULT_FAILURE_FALLBACK_TEMPLATE = 'Tool processing could not be completed.'
+_TOOL_RESULT_FALLBACK_TEMPLATE = '{tool_name} has finished.'
+_TOOL_RESULT_FAILURE_FALLBACK_TEMPLATE = '{tool_name} could not be completed.'
 _TOOL_RESULT_APPROVAL_FALLBACK_TEMPLATE = 'This operation needs confirmation before continuing.'
-_TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE = 'Tool inactive.'
-_ZH_TOOL_RESULT_FALLBACK_TEMPLATE = '工具处理已完成。'
-_ZH_TOOL_RESULT_FAILURE_FALLBACK_TEMPLATE = '工具处理未能完成。'
+_TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE = '{tool_name} is not active.'
+_ZH_TOOL_RESULT_FALLBACK_TEMPLATE = '工具 {tool_name} 已调用完成。'
+_ZH_TOOL_RESULT_FAILURE_FALLBACK_TEMPLATE = '工具 {tool_name} 未能调用完成。'
 _ZH_TOOL_RESULT_APPROVAL_FALLBACK_TEMPLATE = '此操作需要确认后才能继续。'
-_ZH_TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE = '工具未激活。'
+_ZH_TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE = '工具 {tool_name} 未激活。'
 
 _KB_EMPTY_RESULT_MESSAGES: dict[str, dict[str, str]] = {
     'kb_search': {
@@ -985,6 +991,8 @@ def _render_preview_template(
     if '{match}' in template:
         label = match_group or tool_name
         return _ensure_trailing_newline(template.replace('{match}', f'**{label}**'))
+    if '{tool_name}' in template:
+        return _ensure_trailing_newline(template.replace('{tool_name}', f'**{tool_name}**'))
     if '{value}' not in template:
         return _ensure_trailing_newline(template)
     preview_value = value or 'the current item'
@@ -1016,13 +1024,14 @@ def _tool_result_preview(tool_name: str, result: Any, value: str = '', language:
     status = _tool_result_status(result)
     display_value = _tool_result_preview_display_value(tool_name, result, value)
     if status == 'inactive':
-        return _ensure_trailing_newline(
-            _language_fallback(
-                language,
-                _TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE,
-                _ZH_TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE,
-            )
+        tmpl = _language_fallback(
+            language,
+            _TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE,
+            _ZH_TOOL_RESULT_INACTIVE_FALLBACK_TEMPLATE,
         )
+        if '{tool_name}' in tmpl:
+            tmpl = tmpl.replace('{tool_name}', f'**{tool_name}**')
+        return _ensure_trailing_newline(tmpl)
     if status == 'needs_approval':
         return _render_preview_template(
             tool_name,
