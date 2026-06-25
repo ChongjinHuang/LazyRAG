@@ -6,6 +6,7 @@ from typing import Any
 
 import docstring_parser
 from lazyllm.tools.fs.supplier.feishu import FeishuFS
+from lazyllm.tools.fs.supplier.googledrive import GoogleDriveFS
 from lazyllm.tools.fs.supplier.notion import NotionFS
 from lazyllm.tools.tools.search import (
     ArxivSearch,
@@ -172,6 +173,12 @@ DEFAULT_TOOLS: list[ToolGroupConfig] = [
         label='Notion 文件系统',
         description='浏览、搜索和管理 Notion 页面',
         instance=NotionFS(dynamic_auth=True),
+    ),
+    ToolGroupConfig(
+        name='google_drive',
+        label='Google Drive',
+        description='搜索、查找和读取在线 Google Drive 文件',
+        instance=GoogleDriveFS(dynamic_auth=True),
     ),
 ]
 

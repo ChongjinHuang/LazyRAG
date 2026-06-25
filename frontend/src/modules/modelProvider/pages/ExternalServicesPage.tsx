@@ -25,6 +25,7 @@ import {
   withModelProviderJsonOptions,
 } from "../api";
 import ToolManagementSection from "../components/ToolManagementSection";
+import GoogleDriveConnectionSection from "../components/GoogleDriveConnectionSection";
 
 type ServiceCategoryKey = "parsing" | "search" | "academic";
 type ServiceProviderCategory = "ocr" | "search" | "datasource";
@@ -1081,6 +1082,7 @@ export default function ExternalServicesPage({ section = "parsing" }: ExternalSe
             <div className="model-provider-tools-substack">
               {renderServiceCategory("search")}
               {renderServiceCategory("academic")}
+              <GoogleDriveConnectionSection />
               <ToolManagementSection view="builtin" />
               <ToolManagementSection view="mcp" />
             </div>

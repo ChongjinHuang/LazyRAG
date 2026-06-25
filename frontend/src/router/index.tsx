@@ -62,6 +62,14 @@ export default function AppRouter() {
           path="/oauth/notion/callback"
           element={<DataSourceFeishuCallback provider="notion" />}
         />
+        <Route
+          path="/oauth/googledrive/data-source/callback"
+          element={<DataSourceFeishuCallback provider="googledrive" />}
+        />
+        <Route
+          path="/oauth/googledrive/callback"
+          element={<DataSourceFeishuCallback provider="googledrive" />}
+        />
         <Route path="/loginTransition" element={<LoginTransition />} />
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Navigate to="/agent/chat" replace />} />

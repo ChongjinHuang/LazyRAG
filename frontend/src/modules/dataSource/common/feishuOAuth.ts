@@ -19,7 +19,7 @@ export const FEISHU_DATA_SOURCE_OAUTH_CHANNEL =
   "lazymind:datasource:feishu-oauth";
 export const CLOUD_DATA_SOURCE_OAUTH_CHANNEL = FEISHU_DATA_SOURCE_OAUTH_CHANNEL;
 
-export type CloudDataSourceProvider = "feishu" | "notion";
+export type CloudDataSourceProvider = "feishu" | "notion" | "googledrive";
 
 export type FeishuConnectionStatus =
   | "pending"
@@ -71,13 +71,13 @@ interface FeishuPendingOAuthSession {
 export type FeishuDataSourceOAuthMessage =
   | {
       channel: typeof FEISHU_DATA_SOURCE_OAUTH_CHANNEL;
-      source: "feishu-data-source" | "notion-data-source";
+      source: "feishu-data-source" | "notion-data-source" | "googledrive-data-source";
       status: "success";
       connection: FeishuDataSourceConnection;
     }
   | {
       channel: typeof FEISHU_DATA_SOURCE_OAUTH_CHANNEL;
-      source: "feishu-data-source" | "notion-data-source";
+      source: "feishu-data-source" | "notion-data-source" | "googledrive-data-source";
       status: "error";
       message: string;
       provider?: CloudDataSourceProvider;
@@ -112,7 +112,7 @@ function normalizeSameOriginReturnUrl(value?: string) {
       return fallbackUrl;
     }
 
-    if (/\/oauth\/(feishu|notion)(\/data-source)?\/callback$/.test(url.pathname)) {
+    if (/\/oauth\/(feishu|notion|googledrive)(\/data-source)?\/callback$/.test(url.pathname)) {
       return fallbackUrl;
     }
 
@@ -426,6 +426,9 @@ export function getCloudDataSourceCallbackUrl(provider: CloudDataSourceProvider)
 }
 
 export function getDataSourceManagementUrl(provider: CloudDataSourceProvider = "feishu") {
+  if (provider === "googledrive") {
+    return `${window.location.origin}${getBaseName()}/model-providers/tools`;
+  }
   return `${window.location.origin}${getBaseName()}/data-sources/providers/${provider}`;
 }
 

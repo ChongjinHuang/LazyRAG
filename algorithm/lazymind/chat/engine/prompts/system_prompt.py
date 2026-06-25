@@ -90,7 +90,7 @@ def build_system_prompt(
         prompt_parts.append(TOOL_AVAILABILITY_GUIDANCE)
     if 'kb' in active_groups or 'temp_kb' in active_groups:
         prompt_parts.append(SEARCH_GUIDANCE)
-    if 'feishu' in active_groups or 'notion' in active_groups:
+    if 'feishu' in active_groups or 'notion' in active_groups or 'google_drive' in active_groups:
         prompt_parts.append(DOCUMENT_LINK_GUIDANCE)
     if 'web_search' in active_groups:
         prompt_parts.append(WEB_SEARCH_GUIDANCE)

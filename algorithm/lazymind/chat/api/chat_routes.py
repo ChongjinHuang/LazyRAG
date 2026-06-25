@@ -27,7 +27,7 @@ async def list_chat_tools(
         Body(
             description=(
                 'Per-request tool credentials. Format: {tool_name: token} or {tool_name: [token, ...]}. '
-                'For OAuth2 providers (e.g. feishu) pass a valid, unexpired access token.'
+                'For OAuth2 providers (e.g. feishu, notion, googledrive) pass a valid, unexpired access token.'
             )
         ),
     ] = None,
@@ -92,8 +92,9 @@ async def chat(
         Body(
             description=(
                 'Per-request tool credentials. Format: {tool_name: token} or {tool_name: [token, ...]}. '
-                'For OAuth2 providers (e.g. feishu, notion) pass a valid, unexpired access token. '
-                'Example: {"feishu": "u-xxx", "notion": "ntn_xxx", "bing": ["sk-1", "sk-2"]}'
+                'For OAuth2 providers (e.g. feishu, notion, googledrive) pass a valid, unexpired access token. '
+                'Example: {"feishu": "u-xxx", "notion": "ntn_xxx", '
+                '"googledrive": "ya29.xxx", "bing": ["sk-1", "sk-2"]}'
             )
         ),
     ] = None,
