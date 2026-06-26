@@ -146,7 +146,7 @@ DOCUMENT_LINK_GUIDANCE = (
     "link, then reading with references when the task asks for analysis, summary, or "
     "linked-page context. Do not fall back to generic URL fetching for private Notion "
     "pages unless Notion tools are unavailable or unauthorized.\n"
-    "When the user asks to search Google Drive or provides a Google Docs, Sheets, Slides, "
+    "When the user asks to search Google Drive or provides a Google Docs, Sheets, "
     "or Drive URL, use the Google Drive file-system tools. Use `search` for one or more "
     "content keywords and `find` only for file-name regular expressions. Read the matched "
     "file before answering questions that depend on its content."
