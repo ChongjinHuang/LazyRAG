@@ -1030,6 +1030,19 @@
   line-height: 1.6;
 }
 
+.google-drive-connection-guide {
+  margin: 8px 0 0;
+  font-size: 13px;
+
+  a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: #2563eb;
+    font-weight: 600;
+  }
+}
+
 .model-provider-service-category {
   margin-bottom: 14px;
   border: 1px solid rgba(211, 223, 239, 0.9);

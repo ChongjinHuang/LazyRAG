@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { Button, Form, Input, Modal, Space, Tag, message } from "antd";
-import { DeleteOutlined, GoogleOutlined, LinkOutlined, SettingOutlined } from "@ant-design/icons";
+import { DeleteOutlined, FileTextOutlined, GoogleOutlined, LinkOutlined, SettingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
 import { dataSourceCloudOauthApi, unwrapDataSourceApiData } from "@/modules/dataSource/api";
@@ -228,6 +228,15 @@ export default function GoogleDriveConnectionSection() {
           </Form.Item>
           <p className="google-drive-connection-hint">
             {t("modelProvider.external.googleDriveConfigHint")}
+          </p>
+          <p className="google-drive-connection-guide">
+            <a
+              href="/data-sources/docs/google-drive-setup?from=model-provider-tools"
+              target="_blank"
+              rel="noreferrer"
+            >
+              <FileTextOutlined /> {t("modelProvider.external.googleDriveSetupGuideAction")}
+            </a>
           </p>
         </Form>
       </Modal>

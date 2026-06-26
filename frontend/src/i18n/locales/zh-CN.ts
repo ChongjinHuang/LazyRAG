@@ -308,6 +308,7 @@ const zhCN = {
       googleDriveConfigTitle: "配置 Google Drive OAuth",
       googleDriveAuthorize: "保存并授权",
       googleDriveConfigHint: "在 Google Cloud Console 启用 Drive API，并将当前回调地址加入 OAuth Web 客户端的授权重定向 URI。",
+      googleDriveSetupGuideAction: "接入教程",
       googleDriveClientIdRequired: "请输入 OAuth Client ID",
       googleDriveClientSecretRequired: "请输入 OAuth Client Secret",
       googleDriveSecretConfigured: "已保存；留空沿用当前 Secret",
@@ -1508,6 +1509,68 @@ const zhCN = {
         finishManualDetail: "手动输入时，在目标路径选择框中粘贴 Wiki 空间 ID 或 Drive 文件夹 ID（例如 7354xxxxxxxxxxxx、fldxxxxxxxxxxxx），然后勾选“使用当前输入”。",
         finishManualAlt: "飞书云文档地址栏中的 Drive 文件夹 ID",
         finishAlt: "系统内选择或输入飞书目标路径并完成授权",
+      },
+    },
+    dataSourceGoogleDriveSetupGuide: {
+      backTools: "返回工具配置",
+      title: "工具配置-Google Drive 在线文档",
+      subtitle:
+        "在 Google Cloud Console 创建 Google OAuth Web 客户端，然后在 LazyMind 中连接 Google Drive 账号，用于线上原始文档的搜索和读取。",
+      summaryAria: "Google Drive 接入流程概览",
+      summaryTitle: "准备流程",
+      openConsole: "打开 Google Cloud Console",
+      openDriveApi: "打开 Google Drive API",
+      openCredentials: "打开凭据页面",
+      callbackUrl: "授权重定向 URI：{{uri}}",
+      steps: {
+        openConsoleTitle: "创建或选择 Google Cloud 项目",
+        openConsoleDesc:
+          "登录 Google Cloud Console，创建一个新项目，或选择已有项目来保存 LazyMind 使用的 OAuth 配置。",
+        enableApiTitle: "启用 Google Drive API",
+        enableApiDesc:
+          "在 API 和服务中，为当前项目启用 Google Drive API。LazyMind 会调用 Google Drive 官方 API 完成 search、find 和 read。",
+        consentTitle: "配置 OAuth 同意屏幕",
+        consentDesc:
+          "进入 OAuth consent screen，先完成应用名称、联系人等必要信息，再继续创建凭据。",
+        consentUserType:
+          "个人 Google 账号请选择 External；如果是 Google Workspace 且只允许组织内成员使用，可以选择 Internal。",
+        consentTestUsers:
+          "如果应用还处于 Testing 状态，需要把即将授权的 Google 账号加入 Test users。",
+        consentScopes:
+          "添加 Drive 只读权限范围：https://www.googleapis.com/auth/drive.readonly。",
+        credentialsTitle: "创建 OAuth Client ID",
+        credentialsDesc:
+          "进入 Credentials，点击 Create Credentials，选择 OAuth client ID。",
+        credentialsType:
+          "Application type 必须选择 Web application。",
+        credentialsName:
+          "建议命名为 LazyMind Google Drive，方便后续在 Google Cloud 和 LazyMind 中识别。",
+        redirectTitle: "添加 LazyMind 回调地址",
+        redirectDesc:
+          "在 Authorized redirect URIs 中添加 LazyMind 前端实际使用的 OAuth 回调地址，必须和浏览器打开的系统地址一致。",
+        redirectOriginHint:
+          "如果你用 127.0.0.1 或部署域名打开 LazyMind，而不是 localhost，请把回调地址中的 origin 替换成同一个浏览器 origin。",
+        copyCredentialsTitle: "复制 Client ID 和 Client Secret",
+        copyCredentialsDesc:
+          "Web 客户端创建完成后，复制 OAuth Client ID 和 Client Secret。Client Secret 需要保密。",
+        copyClientId:
+          "Client ID 对应 LazyMind 弹窗中的 OAuth Client ID 字段。",
+        copyClientSecret:
+          "Client Secret 对应 LazyMind 弹窗中的 OAuth Client Secret 字段。",
+        enterCredentialsTitle: "注册或登录 LazyMind 并填写凭据",
+        enterCredentialsDesc:
+          "打开 LazyMind；如果需要新账号，先注册，然后进入工具配置页面连接 Google Drive。",
+        enterCredentialsPath:
+          "本地 Docker 地址：先访问 http://localhost:8090/register 注册，再访问 http://localhost:8090/model-providers/tools 配置 Google Drive。",
+        enterCredentialsSave:
+          "打开 Google Drive 在线文档，点击连接 Google Drive，粘贴 Client ID 和 Client Secret，然后点击保存并授权。",
+        finishTitle: "完成授权并在聊天中使用 Google Drive",
+        finishDesc:
+          "在弹出的 Google 授权窗口中完成授权。账号连接成功后，LazyMind 会为聊天启用 Google Drive 工具。",
+        finishChat:
+          "进入 Chat 后，可以让 LazyMind 按关键词搜索 Google Drive，或按文件名正则查找文件。",
+        finishNoIngestion:
+          "这里会直接搜索线上 Google Drive 原始库，不会把文件导入 LazyMind 知识库。",
       },
     },
     dataSourceNotionSetupGuide: {

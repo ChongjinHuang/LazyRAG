@@ -22,6 +22,7 @@ import DataSourceDetail from "@/modules/dataSource/detail";
 import DataSourceFeishuCallback from "@/modules/dataSource/common/feishuCallback";
 import FeishuAccountPage from "@/modules/dataSource/feishuAccounts";
 import FeishuSetupGuide from "@/modules/dataSource/FeishuSetupGuide";
+import GoogleDriveSetupGuide from "@/modules/dataSource/GoogleDriveSetupGuide";
 import NotionSetupGuide from "@/modules/dataSource/NotionSetupGuide";
 import DatasetListPage from "@/modules/datasetManagement/pages/list";
 import DatasetDetailPage from "@/modules/datasetManagement/pages/detail";
@@ -89,6 +90,7 @@ export default function AppRouter() {
           </Route>
           <Route path="data-sources" element={<DataSourceManagement />} />
           <Route path="data-sources/docs/feishu-setup" element={<FeishuSetupGuide />} />
+          <Route path="data-sources/docs/google-drive-setup" element={<GoogleDriveSetupGuide />} />
           <Route path="data-sources/docs/notion-setup" element={<NotionSetupGuide />} />
           <Route path="data-sources/providers/feishu" element={<FeishuAccountPage />} />
           <Route path="data-sources/providers/notion" element={<DataSourceManagement />} />

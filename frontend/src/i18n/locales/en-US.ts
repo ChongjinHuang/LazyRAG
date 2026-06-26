@@ -332,6 +332,7 @@ const enUS = {
       googleDriveConfigTitle: "Configure Google Drive OAuth",
       googleDriveAuthorize: "Save and Authorize",
       googleDriveConfigHint: "Enable the Drive API in Google Cloud Console and add the current callback URL to the OAuth Web client's authorized redirect URIs.",
+      googleDriveSetupGuideAction: "Setup Guide",
       googleDriveClientIdRequired: "Enter the OAuth Client ID",
       googleDriveClientSecretRequired: "Enter the OAuth Client Secret",
       googleDriveSecretConfigured: "Saved; leave blank to keep the current secret",
@@ -1563,6 +1564,68 @@ const enUS = {
           "For manual entry, paste the Wiki space ID or Drive folder ID into the target path selector, for example 7354xxxxxxxxxxxx or fldxxxxxxxxxxxx, then check Use current input.",
         finishManualAlt: "Drive folder ID in the Feishu Docs address bar",
         finishAlt: "Select or enter a Feishu target path and finish authorization in the system",
+      },
+    },
+    dataSourceGoogleDriveSetupGuide: {
+      backTools: "Back to Tool Configuration",
+      title: "Tool Configuration - Google Drive Online Documents",
+      subtitle:
+        "Create a Google OAuth Web client in Google Cloud Console, then connect your Google Drive account in LazyMind for online search and reading.",
+      summaryAria: "Google Drive setup process overview",
+      summaryTitle: "Setup Flow",
+      openConsole: "Open Google Cloud Console",
+      openDriveApi: "Open Google Drive API",
+      openCredentials: "Open Credentials",
+      callbackUrl: "Authorized redirect URI: {{uri}}",
+      steps: {
+        openConsoleTitle: "Create or select a Google Cloud project",
+        openConsoleDesc:
+          "Sign in to Google Cloud Console and create a new project or select an existing project that will hold the LazyMind OAuth configuration.",
+        enableApiTitle: "Enable Google Drive API",
+        enableApiDesc:
+          "In APIs and services, enable Google Drive API for the selected project. LazyMind calls the official Google Drive API for search, find, and read operations.",
+        consentTitle: "Configure OAuth consent screen",
+        consentDesc:
+          "Open OAuth consent screen and complete the required app information before creating credentials.",
+        consentUserType:
+          "Choose External for personal Google accounts, or Internal if your Google Workspace organization restricts the app to members.",
+        consentTestUsers:
+          "If the app is in Testing status, add the Google account you will authorize as a test user.",
+        consentScopes:
+          "Add the Drive readonly scope: https://www.googleapis.com/auth/drive.readonly.",
+        credentialsTitle: "Create an OAuth Client ID",
+        credentialsDesc:
+          "Go to Credentials, click Create Credentials, and choose OAuth client ID.",
+        credentialsType:
+          "Application type must be Web application.",
+        credentialsName:
+          "Use a clear name such as LazyMind Google Drive so it is easy to identify later.",
+        redirectTitle: "Add the LazyMind callback URL",
+        redirectDesc:
+          "In Authorized redirect URIs, add the exact callback URL used by the frontend address you open in the browser.",
+        redirectOriginHint:
+          "If you open LazyMind with 127.0.0.1 or a deployment domain instead of localhost, replace the origin in the callback URL with that same browser origin.",
+        copyCredentialsTitle: "Copy Client ID and Client Secret",
+        copyCredentialsDesc:
+          "After the Web client is created, copy the OAuth Client ID and Client Secret. Keep the secret private.",
+        copyClientId:
+          "Client ID maps to the OAuth Client ID field in LazyMind.",
+        copyClientSecret:
+          "Client Secret maps to the OAuth Client Secret field in LazyMind.",
+        enterCredentialsTitle: "Register or sign in to LazyMind and enter credentials",
+        enterCredentialsDesc:
+          "Open LazyMind, register a new account if needed, then go to Tool Configuration to connect Google Drive.",
+        enterCredentialsPath:
+          "Local Docker path: http://localhost:8090/register for registration, then http://localhost:8090/model-providers/tools for Google Drive.",
+        enterCredentialsSave:
+          "Open Google Drive Online Documents, click Connect Google Drive, paste Client ID and Client Secret, then click Save and Authorize.",
+        finishTitle: "Authorize and use Google Drive in chat",
+        finishDesc:
+          "Complete Google authorization in the popup. After the account is connected, LazyMind enables Google Drive tools for chat.",
+        finishChat:
+          "Open Chat and ask LazyMind to search Google Drive by keywords, or find files by filename pattern.",
+        finishNoIngestion:
+          "This searches the online Google Drive source directly and does not import files into a LazyMind knowledge base.",
       },
     },
     dataSourceNotionSetupGuide: {
