@@ -1384,6 +1384,11 @@ const enUS = {
     dataSourceTypeNotion: "Notion",
     dataSourceTypeNotionDesc:
       "Connect Notion pages or databases, sync by authorization scope and serve chat.",
+    dataSourceTypeGoogleDrive: "Google Drive",
+    dataSourceGoogleDriveSetupHint:
+      "Authorize Google Drive in Tool Configuration for online chat search. Files are not imported into a knowledge base.",
+    dataSourceGoogleDriveConnected: "Connected {{account}}. Used for online chat search.",
+    dataSourceGoogleDriveAccountFallback: "Google Drive account",
     dataSourceTypeStepIntro:
       "Currently supports local files / directories, Feishu, and Notion data source access. Select one to continue.",
     dataSourceAdminOnly: "Admin",

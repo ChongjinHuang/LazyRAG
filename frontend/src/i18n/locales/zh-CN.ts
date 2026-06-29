@@ -1340,6 +1340,11 @@ const zhCN = {
     dataSourceTypeFeishuDesc: "需先设置 App ID / App Secret，再通过 OAuth 连接",
     dataSourceTypeNotion: "Notion",
     dataSourceTypeNotionDesc: "连接 Notion 页面或数据库，按授权范围同步并供 Chat 读取。",
+    dataSourceTypeGoogleDrive: "Google Drive",
+    dataSourceGoogleDriveSetupHint:
+      "在工具配置中授权 Google Drive，用于 Chat 在线搜索，不会导入知识库。",
+    dataSourceGoogleDriveConnected: "已连接 {{account}}，用于 Chat 在线搜索。",
+    dataSourceGoogleDriveAccountFallback: "Google Drive 账号",
     dataSourceTypeStepIntro: "当前支持本地文件 / 本地目录、飞书和 Notion 数据源接入，请选择后进入连接配置。",
     dataSourceAdminOnly: "管理员",
     dataSourceFeishuLockHint: "需先设置 App ID / App Secret，设置后才能选择飞书数据源",

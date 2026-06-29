@@ -25,6 +25,7 @@ import {
   EyeOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
+  GoogleOutlined,
   PlusOutlined,
   SearchOutlined,
   WarningFilled,
@@ -998,6 +999,8 @@ export default function DataSourceManagement() {
   );
   const [notionOauthConnection, setNotionOauthConnection] =
     useState<FeishuDataSourceConnection | null>(null);
+  const [googleDriveOauthConnection, setGoogleDriveOauthConnection] =
+    useState<FeishuDataSourceConnection | null>(null);
   const [cloudSetupProvider, setCloudSetupProvider] =
     useState<CloudDataSourceProvider>("feishu");
   const [feishuSetupModalOpen, setFeishuSetupModalOpen] = useState(false);
@@ -1053,6 +1056,9 @@ export default function DataSourceManagement() {
   const isNotionAuthValid =
     notionOauthConnection?.status === "connected" &&
     Boolean(notionOauthConnection.connectionId);
+  const isGoogleDriveAuthValid =
+    googleDriveOauthConnection?.status === "connected" &&
+    Boolean(googleDriveOauthConnection.connectionId);
   const localSourceCount = sources.filter((item) => item.type === "local").length;
 
   const buildScanScheduleLabel = (binding?: ScanV2Binding | null) => {
@@ -2108,6 +2114,25 @@ export default function DataSourceManagement() {
     }
   };
 
+  const refreshGoogleDriveAuthConnection = async () => {
+    try {
+      const response =
+        await dataSourceCloudOauthApi.listConnectionsApiAuthserviceV1CloudConnectionsGet({
+          provider: "googledrive",
+          status: null,
+        });
+      const nextConnection = getCloudConnectionItems(response.data)
+        .map((item) => mapCloudConnectionToDataSourceConnection(item, "googledrive"))
+        .find(
+          (connection) =>
+            connection.status === "connected" && Boolean(connection.connectionId),
+        ) || null;
+      setGoogleDriveOauthConnection(nextConnection);
+    } catch (error) {
+      console.error("Failed to refresh Google Drive auth connection", error);
+    }
+  };
+
   const clearOauthAttempt = () => {
     if (oauthAttemptRef.current?.timerId) {
       window.clearInterval(oauthAttemptRef.current.timerId);
@@ -2331,6 +2356,7 @@ export default function DataSourceManagement() {
     void refreshSources(false);
     void refreshFeishuAuthAccounts();
     void refreshNotionAuthConnection();
+    void refreshGoogleDriveAuthConnection();
   }, []);
 
   useEffect(() => {
@@ -2339,6 +2365,7 @@ export default function DataSourceManagement() {
     }
     void refreshFeishuAuthAccounts();
     void refreshNotionAuthConnection();
+    void refreshGoogleDriveAuthConnection();
   }, [activeView]);
 
   useEffect(() => {
@@ -3888,6 +3915,39 @@ export default function DataSourceManagement() {
                   </button>
                 );
               })}
+              <button
+                type="button"
+                className={`data-source-provider-card ${isGoogleDriveAuthValid ? "" : "locked"}`}
+                onClick={() => navigate("/model-providers/tools")}
+              >
+                <span className="data-source-provider-logo data-source-icon-googledrive">
+                  <GoogleOutlined />
+                </span>
+                <span className="data-source-provider-card-copy">
+                  <span className="data-source-provider-title-row">
+                    <span className="data-source-provider-name">
+                      {t("admin.dataSourceTypeGoogleDrive")}
+                    </span>
+                    <Tag color={isGoogleDriveAuthValid ? "success" : "default"}>
+                      {isGoogleDriveAuthValid
+                        ? t("admin.dataSourceProviderAuthValid")
+                        : t("admin.dataSourceProviderAuthPending")}
+                    </Tag>
+                  </span>
+                  <span className="data-source-provider-desc">
+                    {isGoogleDriveAuthValid
+                      ? t("admin.dataSourceGoogleDriveConnected", {
+                          account:
+                            googleDriveOauthConnection?.accountName ||
+                            t("admin.dataSourceGoogleDriveAccountFallback"),
+                        })
+                      : t("admin.dataSourceGoogleDriveSetupHint")}
+                  </span>
+                </span>
+                <span className="data-source-provider-card-arrow" aria-hidden="true">
+                  <ArrowRightOutlined />
+                </span>
+              </button>
             </div>
           </main>
         )}
