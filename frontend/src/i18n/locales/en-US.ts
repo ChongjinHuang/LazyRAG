@@ -1793,9 +1793,9 @@ const enUS = {
     dataSourceOauthSuccess: "OAuth succeeded. Account connection status updated.",
     dataSourceOauthFailedRetry: "OAuth failed. Please try again later.",
     dataSourceOauthSessionMissing:
-      "Authorization session expired. Please start Feishu OAuth again.",
+      "Authorization session expired. Please start OAuth again.",
     dataSourceOauthStateMismatch:
-      "Feishu authorization state verification failed. Please authorize again.",
+      "Authorization state verification failed. Please authorize again.",
     dataSourceOauthRequiredBeforeSave:
       "Feishu OAuth is not complete. Complete authorization before continuing configuration.",
     dataSourceOauthManualCallbackTitle: "Complete OAuth callback manually",
@@ -2062,16 +2062,16 @@ const enUS = {
         topologyArchivePath: "/mnt/team-share/ops-docs/historical-topology-diagram.pptx",
       },
     },
-    dataSourceCallbackLoadingTitle: "Finishing Feishu authorization",
+    dataSourceCallbackLoadingTitle: "Finishing {{providerName}} authorization",
     dataSourceCallbackLoadingSubtitle:
-      "Please wait while the system verifies authorization and writes it back to data source settings.",
-    dataSourceCallbackErrorTitle: "Feishu authorization not completed",
-    dataSourceCallbackErrorWithCode: "Feishu authorization failed: {{code}}",
+      "Please wait while the system verifies {{providerName}} authorization and updates the account settings.",
+    dataSourceCallbackErrorTitle: "{{providerName}} authorization not completed",
+    dataSourceCallbackErrorWithCode: "{{providerName}} authorization failed: {{code}}",
     dataSourceCallbackMissingParams:
       "Missing callback parameters. Please start account connection again.",
-    dataSourceCallbackSuccessTitle: "Feishu account connected",
+    dataSourceCallbackSuccessTitle: "{{providerName}} account connected",
     dataSourceCallbackSuccessSubtitle:
-      "Authorization verified for {{accountName}}. This page will stay open so you can verify the callback API.",
+      "Authorization verified for {{accountName}}. Returning to account management.",
     dataSourceCallbackBack: "Back to Data Source Management",
     groupManagement: "Group Management",
     groupDetail: "Group Detail",
