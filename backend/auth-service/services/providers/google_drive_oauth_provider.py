@@ -36,6 +36,8 @@ def _post_form(payload: dict, timeout_seconds: int = 30) -> dict:
         raise RuntimeError(f'provider http error {exc.code}: {detail}') from exc
     except URLError as exc:
         raise RuntimeError(f'provider network error: {exc}') from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f'provider returned invalid json: {exc}') from exc
 
 
 def _get_json(url: str, access_token: str, timeout_seconds: int = 30) -> dict:
@@ -53,6 +55,8 @@ def _get_json(url: str, access_token: str, timeout_seconds: int = 30) -> dict:
         raise RuntimeError(f'provider http error {exc.code}: {detail}') from exc
     except URLError as exc:
         raise RuntimeError(f'provider network error: {exc}') from exc
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f'provider returned invalid json: {exc}') from exc
 
 
 class GoogleDriveOAuthProvider(CloudOAuthProvider):

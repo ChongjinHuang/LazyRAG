@@ -4,6 +4,20 @@ from services.providers import google_drive_oauth_provider as provider_module
 from services.providers.google_drive_oauth_provider import GoogleDriveOAuthProvider
 
 
+class _Response:
+    def __init__(self, body: bytes):
+        self._body = body
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self):
+        return self._body
+
+
 def test_authorize_url_requests_offline_readonly_access():
     provider = GoogleDriveOAuthProvider()
     url = provider.build_authorize_url(
@@ -92,3 +106,25 @@ def test_tenant_mode_is_rejected():
         assert 'oauth_user' in str(exc)
     else:
         raise AssertionError('expected tenant mode to be rejected')
+
+
+def test_post_form_reports_invalid_json(monkeypatch):
+    monkeypatch.setattr(provider_module.request, 'urlopen', lambda *_args, **_kwargs: _Response(b'not-json'))
+
+    try:
+        provider_module._post_form({'grant_type': 'authorization_code'})
+    except RuntimeError as exc:
+        assert 'invalid json' in str(exc)
+    else:
+        raise AssertionError('expected invalid JSON to raise RuntimeError')
+
+
+def test_get_json_reports_invalid_json(monkeypatch):
+    monkeypatch.setattr(provider_module.request, 'urlopen', lambda *_args, **_kwargs: _Response(b'not-json'))
+
+    try:
+        provider_module._get_json('https://example.com', 'token')
+    except RuntimeError as exc:
+        assert 'invalid json' in str(exc)
+    else:
+        raise AssertionError('expected invalid JSON to raise RuntimeError')

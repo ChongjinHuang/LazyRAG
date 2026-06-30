@@ -3,7 +3,8 @@ import { Button, Form, Input, Modal, Space, Tag, message } from "antd";
 import { DeleteOutlined, FileTextOutlined, GoogleOutlined, LinkOutlined, SettingOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 
-import { dataSourceCloudOauthApi, unwrapDataSourceApiData } from "@/modules/dataSource/api";
+import { dataSourceCloudOauthApi } from "@/modules/dataSource/api/clients";
+import { unwrapApiData } from "@/modules/dataSource/api/unwrap";
 import {
   CLOUD_DATA_SOURCE_OAUTH_CHANNEL,
   consumeCloudDataSourceOAuthResult,
@@ -45,7 +46,7 @@ export default function GoogleDriveConnectionSection() {
           authMode: "oauth_user",
           status: "ACTIVE",
         });
-      const data = unwrapDataSourceApiData<any>(response.data);
+      const data = unwrapApiData<any>(response.data);
       setConnection((data?.items || [])[0] || null);
     } catch {
       setConnection(null);
@@ -92,7 +93,7 @@ export default function GoogleDriveConnectionSection() {
         await dataSourceCloudOauthApi.getOauthAppCredentialsApiAuthserviceV1CloudProviderOauthAppCredentialsGet({
           provider: "googledrive",
         });
-      const data = unwrapDataSourceApiData<any>(response.data);
+      const data = unwrapApiData<any>(response.data);
       form.setFieldsValue({ clientId: data?.app_id || "", clientSecret: "" });
       setSecretConfigured(Boolean(data?.secret_configured));
     } catch {
