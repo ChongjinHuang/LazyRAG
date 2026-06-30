@@ -173,7 +173,7 @@ func conversationIDFromName(name string) string {
 }
 
 // ensureConversation textCreatetextUsertextConversation，textConversation、text history text seq、error
-func ensureConversation(db *gorm.DB, convID, displayName string, searchConfig json.RawMessage, models json.RawMessage, userID, userName string) (*orm.Conversation, int, error) {
+func ensureConversation(ctx context.Context, db *gorm.DB, convID, displayName string, searchConfig json.RawMessage, models json.RawMessage, userID, userName string, pluginSettings map[string]any) (*orm.Conversation, int, error) {
 	now := time.Now()
 	var c orm.Conversation
 	err := db.Where("id = ? AND create_user_id = ?", convID, userID).First(&c).Error
@@ -214,10 +214,57 @@ func ensureConversation(db *gorm.DB, convID, displayName string, searchConfig js
 			UpdatedAt:      now,
 		},
 	}
+	// Resolve plugin settings for the new conversation.
+	// Priority: caller-supplied pluginSettings > user_chat_settings defaults.
+	// All three fields are always written so conversations.enable_plugin / plugin_mode /
+	// enable_subagent are never NULL — no per-request fallback query needed.
+	resolvedPS := resolveInitialPluginSettings(ctx, db, userID, pluginSettings)
+	c.EnablePlugin = &resolvedPS.enablePlugin
+	c.PluginMode = &resolvedPS.pluginMode
+	c.EnableSubagent = &resolvedPS.enableSubagent
 	if err := db.Create(&c).Error; err != nil {
 		return nil, 0, err
 	}
 	return &c, 1, nil
+}
+
+type resolvedPluginSettings struct {
+	enablePlugin   bool
+	pluginMode     string
+	enableSubagent bool
+}
+
+// resolveInitialPluginSettings merges caller-supplied overrides with the user's
+// global defaults from user_chat_settings. Fields present in pluginSettings take
+// priority; missing fields fall back to the DB defaults (or hardcoded values if
+// the user has no row yet).
+func resolveInitialPluginSettings(ctx context.Context, db *gorm.DB, userID string, pluginSettings map[string]any) resolvedPluginSettings {
+	// Start from hardcoded fallbacks (matches user_chat_settings DB defaults).
+	out := resolvedPluginSettings{
+		enablePlugin:   true,
+		pluginMode:     "dynamic",
+		enableSubagent: true,
+	}
+	// Load user-level defaults.
+	if db != nil {
+		var s orm.UserChatSettings
+		if err := db.WithContext(ctx).Where("user_id = ?", userID).First(&s).Error; err == nil {
+			out.enablePlugin = s.EnablePlugin
+			out.pluginMode = s.PluginMode
+			out.enableSubagent = s.EnableSubagent
+		}
+	}
+	// Apply caller-supplied overrides.
+	if v, ok := pluginSettings["enable_plugin"].(bool); ok {
+		out.enablePlugin = v
+	}
+	if v, ok := pluginSettings["plugin_mode"].(string); ok && (v == "dynamic" || v == "auto") {
+		out.pluginMode = v
+	}
+	if v, ok := pluginSettings["enable_subagent"].(bool); ok {
+		out.enableSubagent = v
+	}
+	return out
 }
 
 func buildHistoryMessages(histories []orm.ChatHistory) []map[string]string {
@@ -414,11 +461,35 @@ func filePathsForUpstreamChat(raw map[string]any) any {
 	return out
 }
 
-// historyFilePaths extracts local file URIs from historical chat_histories.ext.input fields.
-// This ensures files uploaded in past turns are still visible to Python on subsequent turns.
-func historyFilePaths(histories []orm.ChatHistory) []string {
-	seen := make(map[string]struct{})
-	var out []string
+// filesPerTurnMap builds a map of turn -> []filePath from historical chat_histories
+// plus the current turn's uploads. Format: {"current": [...], "<seq>": [...]}.
+// Python uses this both for per-turn file context and to reconstruct the merged file list.
+
+// filesPerTurnMap builds a map of seq -> []filePath from historical chat_histories,
+// plus an entry for the current turn (seq=0) from the raw input.
+// This is passed to Python as history_files_per_turn so it can rebuild per-turn file context.
+func filesPerTurnMap(histories []orm.ChatHistory, currentFiles any, currentSeq int) map[string][]string {
+	out := make(map[string][]string)
+	// Current turn files keyed by actual seq number.
+	var currentPaths []string
+	switch xs := currentFiles.(type) {
+	case []any:
+		for _, it := range xs {
+			if s, ok := it.(string); ok && strings.TrimSpace(s) != "" {
+				currentPaths = append(currentPaths, strings.TrimSpace(s))
+			}
+		}
+	case []string:
+		for _, s := range xs {
+			if strings.TrimSpace(s) != "" {
+				currentPaths = append(currentPaths, strings.TrimSpace(s))
+			}
+		}
+	}
+	if len(currentPaths) > 0 {
+		out[fmt.Sprintf("%d", currentSeq)] = currentPaths
+	}
+	// Historical turns keyed by seq.
 	for _, h := range histories {
 		if len(h.Ext) == 0 {
 			continue
@@ -429,6 +500,7 @@ func historyFilePaths(histories []orm.ChatHistory) []string {
 		if err := json.Unmarshal(h.Ext, &ext); err != nil {
 			continue
 		}
+		seqKey := fmt.Sprintf("%d", h.Seq)
 		for _, item := range ext.Input {
 			typ, _ := item["input_type"].(string)
 			typ = strings.ToLower(strings.TrimSpace(typ))
@@ -444,56 +516,13 @@ func historyFilePaths(histories []orm.ChatHistory) []string {
 			if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
 				continue
 			}
-			if _, dup := seen[uri]; dup {
-				continue
-			}
-			seen[uri] = struct{}{}
-			out = append(out, uri)
+			out[seqKey] = append(out[seqKey], uri)
 		}
 	}
 	return out
 }
 
-// mergeFilePaths merges current-turn files with historical file paths, deduplicating.
-// Returns nil when the combined result is empty.
-func mergeFilePaths(current any, historical []string) any {
-	seen := make(map[string]struct{})
-	var out []any
-
-	addStr := func(s string) {
-		s = strings.TrimSpace(s)
-		if s == "" {
-			return
-		}
-		if _, dup := seen[s]; dup {
-			return
-		}
-		seen[s] = struct{}{}
-		out = append(out, s)
-	}
-
-	switch xs := current.(type) {
-	case []any:
-		for _, it := range xs {
-			if s, ok := it.(string); ok {
-				addStr(s)
-			}
-		}
-	case []string:
-		for _, s := range xs {
-			addStr(s)
-		}
-	}
-	for _, s := range historical {
-		addStr(s)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, query string, histories []orm.ChatHistory, raw map[string]any, resourceContext *evolution.ChatResourceContext, userID string) map[string]any {
+func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, query string, histories []orm.ChatHistory, raw map[string]any, resourceContext *evolution.ChatResourceContext, userID string, currentSeq int) map[string]any {
 	if strings.TrimSpace(sessionID) == "" {
 		sessionID = upstreamSessionID(convID)
 	}
@@ -504,21 +533,23 @@ func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, q
 			mode = m
 		}
 	}
+	currentFilePaths := filePathsForUpstreamChat(raw)
+	filesMap := filesPerTurnMap(histories, currentFilePaths, currentSeq)
 	body := map[string]any{
-		"query":           query,
-		"session_id":      sessionID,
-		"conversation_id": convID,
-		"history":         buildHistoryMessages(histories),
-		"filters":         raw["filters"],
-		"files":           mergeFilePaths(filePathsForUpstreamChat(raw), historyFilePaths(histories)),
-		"databases":       raw["databases"],
-		"debug":           raw["debug"],
-		"reasoning":       resolveReasoning(raw),
-		"priority":        raw["priority"],
-		"enable_thinking": raw["enable_thinking"],
-		"use_memory":      useMemory,
-		"user_id":         strings.TrimSpace(userID),
-		"mode":            mode,
+		"query":            query,
+		"session_id":       sessionID,
+		"conversation_id":  convID,
+		"history":          buildHistoryMessages(histories),
+		"filters":          raw["filters"],
+		"files":            filesMap,
+		"current_turn_seq": currentSeq,
+		"databases":        raw["databases"],
+		"debug":            raw["debug"],
+		"reasoning":        resolveReasoning(raw),
+		"priority":         raw["priority"],
+		"use_memory":       useMemory,
+		"user_id":          strings.TrimSpace(userID),
+		"mode":             mode,
 	}
 	if environmentContext, ok := raw["environment_context"].(map[string]any); ok {
 		body["environment_context"] = environmentContext
@@ -541,6 +572,11 @@ func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, q
 		}
 		body["plugin_context"] = mergedPC
 	}
+	// Propagate ask_response so Python ChatAgent can resolve ask_pending state.
+	// Format: {"ask_id": "...", "selected": [...]}
+	if ar, ok := raw["ask_response"].(map[string]any); ok && len(ar) > 0 {
+		body["ask_response"] = ar
+	}
 	if resourceContext != nil {
 		body["disabled_tools"] = resourceContext.DisabledTools
 		body["available_skills"] = resourceContext.AvailableSkills
@@ -553,23 +589,96 @@ func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, q
 		conv, _ := raw["conversation"].(map[string]any)
 		if conv != nil {
 			if sc, _ := conv["search_config"].(map[string]any); sc != nil {
-				filters := map[string]any{}
-				if kbIDs := datasetIDsFromSearchConfig(sc); len(kbIDs) > 0 {
-					filters["kb_id"] = kbIDs
-				}
-				if creators := stringSliceFromAny(sc["creators"]); len(creators) > 0 {
-					filters["creator"] = creators
-				}
-				if tags := stringSliceFromAny(sc["tags"]); len(tags) > 0 {
-					filters["tags"] = tags
-				}
-				if len(filters) > 0 {
-					body["filters"] = filters
-				}
+				body["filters"] = filtersFromSearchConfig(sc)
+			}
+		}
+	}
+	// Internal/auto-advance requests omit conversation.search_config; fall back to the
+	// persisted conversation row so kb_id scope matches the user's original selection.
+	if body["filters"] == nil && db != nil && convID != "" {
+		var c orm.Conversation
+		if err := db.WithContext(ctx).Select("search_config").Where("id = ?", convID).First(&c).Error; err == nil && len(c.SearchConfig) > 0 {
+			var sc map[string]any
+			if json.Unmarshal(c.SearchConfig, &sc) == nil {
+				body["filters"] = filtersFromSearchConfig(sc)
 			}
 		}
 	}
 	return body
+}
+
+// filtersFromSearchConfig builds upstream dataset filters from a search_config dict.
+func filtersFromSearchConfig(sc map[string]any) map[string]any {
+	if sc == nil {
+		return nil
+	}
+	filters := map[string]any{}
+	if kbIDs := datasetIDsFromSearchConfig(sc); len(kbIDs) > 0 {
+		filters["kb_id"] = kbIDs
+	}
+	if creators := stringSliceFromAny(sc["creators"]); len(creators) > 0 {
+		filters["creator"] = creators
+	}
+	if tags := stringSliceFromAny(sc["tags"]); len(tags) > 0 {
+		filters["tags"] = tags
+	}
+	if len(filters) == 0 {
+		return nil
+	}
+	return filters
+}
+
+// resolvePluginMode determines the effective plugin_mode for this request.
+// Priority: request body > "dynamic" default.
+// Valid values: "auto", "dynamic". Anything else is normalised to "dynamic".
+func resolvePluginMode(raw map[string]any) string {
+	if v, ok := raw["plugin_mode"].(string); ok {
+		v = strings.TrimSpace(v)
+		if v == "auto" || v == "dynamic" {
+			return v
+		}
+	}
+	return "dynamic"
+}
+
+// resolvePluginModeWithFallback determines the effective plugin_mode with full priority chain:
+//
+//	request body > DB-resolved agentic_config (loaded via applyChatRuntimeConfigs) > "dynamic"
+//
+// reqBody must have already been populated by applyChatRuntimeConfigs so that
+// reqBody["agentic_config"]["plugin_mode"] reflects the DB value.
+func resolvePluginModeWithFallback(raw map[string]any, reqBody map[string]any) string {
+	// Highest priority: explicit value in the original request body.
+	if v, ok := raw["plugin_mode"].(string); ok {
+		v = strings.TrimSpace(v)
+		if v == "auto" || v == "dynamic" {
+			return v
+		}
+	}
+	return pluginModeFromReqBody(reqBody)
+}
+
+// pluginModeFromReqBody reads the resolved plugin_mode from a fully-built chat request body.
+// Priority: plugin_context > agentic_config > "dynamic".
+// Used when persisting plugin_step task params so OnSubAgentDone can branch on auto vs dynamic.
+func pluginModeFromReqBody(reqBody map[string]any) string {
+	if pc, ok := reqBody["plugin_context"].(map[string]any); ok {
+		if v, ok := pc["plugin_mode"].(string); ok {
+			v = strings.TrimSpace(v)
+			if v == "auto" || v == "dynamic" {
+				return v
+			}
+		}
+	}
+	if ac, ok := reqBody["agentic_config"].(map[string]any); ok {
+		if v, ok := ac["plugin_mode"].(string); ok {
+			v = strings.TrimSpace(v)
+			if v == "auto" || v == "dynamic" {
+				return v
+			}
+		}
+	}
+	return "dynamic"
 }
 
 func resolveUseMemory(raw map[string]any, resourceContext *evolution.ChatResourceContext) bool {
@@ -649,14 +758,11 @@ func handleNonStreamChat(
 ) {
 	pyBody, _ := json.Marshal(reqBody)
 	upstreamURL := common.JoinURL(baseURL, "/api/chat")
-	fmt.Printf("DEBUG upstream request url=%s params=%s\n", upstreamURL, debugJSON(reqBody))
-	respBytes, statusCode, err := common.HTTPPost(reqCtx, upstreamURL, "application/json", pyBody)
+	respBytes, _, err := common.HTTPPost(reqCtx, upstreamURL, "application/json", pyBody)
 	if err != nil {
-		fmt.Println("DEBUG upstream request failed url=", upstreamURL, " err=", err)
 		common.ReplyErr(w, fmt.Sprintf("%s: %v", "chat service unavailable", err), http.StatusBadGateway)
 		return
 	}
-	fmt.Println("DEBUG upstream response url=", upstreamURL, " status=", statusCode)
 	var pyResp struct {
 		Code int             `json:"code"`
 		Msg  string          `json:"msg"`
@@ -852,6 +958,7 @@ func streamSingleAnswer(
 	var fullResult string
 	var toolCallTurns int
 	var sources []any
+	var pendingAskPending any
 	thinkStart := time.Now()
 	// text：textConversation/text，finish_reason text UNSPECIFIED
 	writeSSEChunk(w, flusher, &ChatChunkResponse{
@@ -869,7 +976,8 @@ func streamSingleAnswer(
 	for d := range ch {
 		if d.TaskCreated != nil {
 			userIDForTask, _ := reqBody["user_id"].(string)
-			notice := handleTaskCreated(chatCtx, db, stateStore, convID, historyID, userIDForTask, d.TaskCreated, llmConfigFromBody(reqBody), toolConfigFromBody(reqBody))
+			pluginModeForTask := pluginModeFromReqBody(reqBody)
+			notice := handleTaskCreated(chatCtx, db, stateStore, convID, historyID, userIDForTask, d.TaskCreated, llmConfigFromBody(reqBody), toolConfigFromBody(reqBody), pluginModeForTask)
 			if notice != nil {
 				taskChunk := &ChatChunkResponse{
 					ConversationID: convID,
@@ -892,6 +1000,31 @@ func streamSingleAnswer(
 					})
 				}
 			}
+			continue
+		}
+		if d.AskPending != nil {
+			pendingAskPending = d.AskPending
+			askChunk := &ChatChunkResponse{
+				ConversationID: convID,
+				Seq:            int32(seq),
+				HistoryID:      historyID,
+				FinishReason:   "FINISH_REASON_UNSPECIFIED",
+				AskPending:     d.AskPending,
+			}
+			if reqCtx.Err() == nil {
+				writeSSEChunk(w, flusher, askChunk)
+			}
+			if stateStore != nil {
+				_ = appendChatChunk(chatCtx, stateStore, convID, historyID, askChunk)
+				_ = AppendConvEvent(chatCtx, stateStore, convID, &ConvEvent{
+					Type:    "ask_pending",
+					Payload: d.AskPending,
+				})
+			}
+			continue
+		}
+		if d.IntentUpdated != nil {
+			handleIntentUpdated(chatCtx, db, stateStore, convID, d.IntentUpdated)
 			continue
 		}
 		if d.Heartbeat {
@@ -940,6 +1073,10 @@ func streamSingleAnswer(
 	retrievalResult := marshalRetrievalResult(sources)
 	if pendingThink != "" {
 		fullResult += "<think>" + pendingThink + "</think>"
+	}
+	// Persist ask_pending into ext so the ask card survives page reload.
+	if pendingAskPending != nil {
+		historyExt = mergeAskPendingIntoExt(historyExt, pendingAskPending)
 	}
 	persisted := false
 	if target.IsRegeneration && target.Existing != nil {
@@ -1248,6 +1385,7 @@ func handleTaskCreated(
 	ev *TaskCreatedEvent,
 	llmConfig map[string]any,
 	toolConfig map[string]any,
+	pluginMode string,
 ) *TaskCreatedNotice {
 	if ev == nil || strings.TrimSpace(ev.TaskID) == "" {
 		return nil
@@ -1255,7 +1393,7 @@ func handleTaskCreated(
 
 	// Plugin Step path — handled separately.
 	if ev.AgentType == "plugin_step" {
-		return handlePluginStepCreated(chatCtx, db, stateStore, convID, historyID, userID, ev, llmConfig, toolConfig)
+		return handlePluginStepCreated(chatCtx, db, stateStore, convID, historyID, userID, ev, llmConfig, toolConfig, pluginMode)
 	}
 	mode := ev.Mode
 	if mode != "auto" && mode != "manual" {
@@ -1350,6 +1488,7 @@ func handlePluginStepCreated(
 	ev *TaskCreatedEvent,
 	llmConfig map[string]any,
 	toolConfig map[string]any,
+	pluginMode string,
 ) *TaskCreatedNotice {
 	// Parse PluginStepParams from ev.Params.
 	var params plugin.PluginStepParams
@@ -1387,13 +1526,35 @@ func handlePluginStepCreated(
 			}
 			params.PartialIndices = parsed
 		}
+		if hfpt, ok := ev.Params["history_files_per_turn"].(map[string]any); ok {
+			parsed := make(map[string][]string, len(hfpt))
+			for k, v := range hfpt {
+				if arr, ok2 := v.([]any); ok2 {
+					strs := make([]string, 0, len(arr))
+					for _, elem := range arr {
+						if s, ok3 := elem.(string); ok3 {
+							strs = append(strs, s)
+						}
+					}
+					parsed[k] = strs
+				}
+			}
+			params.HistoryFilesPerTurn = parsed
+		}
+	}
+	// Carry the resolved plugin_mode into params so it is persisted with the task
+	// and available when OnSubAgentDone reconstructs PluginChatContext from DB.
+	if pluginMode == "auto" || pluginMode == "dynamic" {
+		params.PluginMode = pluginMode
+	} else {
+		params.PluginMode = "dynamic"
 	}
 	if params.PluginID == "" || params.StepID == "" {
 		fmt.Println("[Core] [PLUGIN_STEP_INVALID_PARAMS] plugin_id or step_id missing")
 		return nil
 	}
 
-	sessionID, taskID, err := plugin.HandlePluginStepCreated(
+	sessionID, taskID, pluginCompleted, err := plugin.HandlePluginStepCreated(
 		ctx, db, stateStore, convID, historyID, userID,
 		ev.TaskID, ev.Title, ev.Objective,
 		params,
@@ -1402,6 +1563,19 @@ func handlePluginStepCreated(
 	)
 	if err != nil {
 		fmt.Printf("[Core] [PLUGIN_STEP_FAILED] err=%v\n", err)
+		return nil
+	}
+
+	// When ChatAgent signals plugin completion via __end__, emit plugin_completed
+	// to the conversation event stream so the frontend can close the plugin panel.
+	if pluginCompleted {
+		_ = AppendConvEvent(ctx, stateStore, convID, &ConvEvent{
+			Type: "plugin_completed",
+			Payload: map[string]any{
+				"session_id": sessionID,
+				"plugin_id":  params.PluginID,
+			},
+		})
 		return nil
 	}
 
@@ -1420,4 +1594,56 @@ func handlePluginStepCreated(
 		SeqInConversation: task.SeqInConversation,
 		PluginSessionID:   sessionID,
 	}
+}
+
+// mergeAskPendingIntoExt merges ask_pending data into the ext JSON field so that
+// the ask card is persisted and can be restored on page reload.
+// handleIntentUpdated writes the intent emitted by the update_intent tool to DB,
+// then pushes an intent_updated convEvent so the frontend can refresh immediately.
+func handleIntentUpdated(ctx context.Context, db *gorm.DB, stateStore state.Store, convID string, ev *IntentUpdatedEvent) {
+	if ev == nil || ev.SessionID == "" {
+		return
+	}
+	if db != nil {
+		now := time.Now().UTC()
+		payload := fmt.Sprintf(`{"text":%q}`, ev.Content)
+		if ev.Scope == "session" {
+			db.WithContext(ctx).Exec(
+				`UPDATE plugin_sessions SET intent_context = ?, updated_at = ? WHERE id = ?`,
+				payload, now, ev.SessionID,
+			)
+		} else if ev.Scope == "step" && ev.StepID != "" {
+			rowID := fmt.Sprintf("psi_%s", common.GenerateID())
+			db.WithContext(ctx).Exec(
+				`INSERT INTO plugin_step_intents (id, session_id, step_id, intent_context, updated_at)
+				 VALUES (?, ?, ?, ?, ?)
+				 ON CONFLICT (session_id, step_id) DO UPDATE
+				 SET intent_context = EXCLUDED.intent_context, updated_at = EXCLUDED.updated_at`,
+				rowID, ev.SessionID, ev.StepID, payload, now,
+			)
+		}
+	}
+	if stateStore != nil {
+		_ = AppendConvEvent(ctx, stateStore, convID, &ConvEvent{
+			Type: "intent_updated",
+			Payload: map[string]any{
+				"session_id": ev.SessionID,
+				"scope":      ev.Scope,
+				"step_id":    ev.StepID,
+			},
+		})
+	}
+}
+
+func mergeAskPendingIntoExt(ext json.RawMessage, askPending any) json.RawMessage {
+	m := make(map[string]any)
+	if len(ext) > 0 {
+		_ = json.Unmarshal(ext, &m)
+	}
+	m["ask_pending"] = askPending
+	b, err := json.Marshal(m)
+	if err != nil {
+		return ext
+	}
+	return b
 }

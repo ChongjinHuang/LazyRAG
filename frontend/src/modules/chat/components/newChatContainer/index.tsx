@@ -40,9 +40,10 @@ import { streamManager } from "@/modules/chat/utils/StreamManager";
 import { ChatServiceApi } from "@/modules/chat/utils/request";
 import { useChatMessageStore } from "@/modules/chat/store/chatMessage";
 import { useTaskCenterStore } from "@/modules/chat/store/taskCenter";
-import { CHAT_RESUME_CONVERSATION_KEY } from "@/modules/chat/constants/chat";
+import { CHAT_AUTO_ADVANCE_EVENT, CHAT_RESUME_CONVERSATION_KEY, type ChatAutoAdvanceDetail } from "@/modules/chat/constants/chat";
+import { emitConversationActivity } from "@/modules/chat/utils/conversationActivity";
 import { useTranslation } from "react-i18next";
-import { getRegenerationInputs } from "@/modules/chat/utils/message";
+import { getRegenerationInputs, mergeChatMessageLists, buildChatMessageListFromHistory } from "@/modules/chat/utils/message";
 import {
   splitThinkingContent,
   formatThinkingForDisplay,
@@ -97,6 +98,8 @@ export interface ChatImperativeProps {
   sendMessage: (params: SendMessageParams) => void;
   uploadFiles?: (files: File[]) => void;
   openResumeSSE?: (conversationId: string) => void;
+  appendAutoAdvanceTurn?: (conversationId: string, driverMessage: string) => void;
+  ensureAutoAdvanceUserTurn?: (conversationId: string, driverMessage: string) => void;
 }
 
 interface Props {
@@ -107,6 +110,7 @@ interface Props {
     input: any[],
     action: ChatConversationsRequestActionEnum,
     callbacks: Record<string, (e: CustomEvent) => void>,
+    extras?: Record<string, unknown>,
   ) => any; // Return new SSE.
   onOpenResumeSSE?: (
     conversationId: string,
@@ -128,6 +132,9 @@ interface Props {
   disabledReason?: string;
   disabledDescription?: string;
   disabledAction?: ReactNode;
+  onPluginSettingsChange?: (settings: import('@/modules/chat/utils/request').ConversationPluginSettings) => void;
+  initialPluginSettings?: import('@/modules/chat/utils/request').ConversationPluginSettings;
+  hasPluginSession?: boolean;
 }
 
 export interface ChatMessage {
@@ -190,6 +197,9 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       disabledReason,
       disabledDescription,
       disabledAction,
+      onPluginSettingsChange,
+      initialPluginSettings,
+      hasPluginSession,
     } = props;
     const { clearPendingMessage: clearStorePendingMessage } =
       useChatMessageStore();
@@ -202,6 +212,11 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
     const messageListRef = useRef<any[]>([]);
     const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     const conversationMessagesCache = useRef<Map<string, any[]>>(new Map());
+    // Tracks the temp_id used when a conversation was started before the server
+    // assigned a real id. Maps real_id -> temp_id so that when a stream becomes
+    // a background stream (user switched away before the first frame arrived),
+    // we can still find the correct cache entry.
+    const tempIdToRealIdRef = useRef<Map<string, string>>(new Map());
 
     const [messageList, setMessageList] = useState<any[]>([]);
     const [loading, setLoading] = useState(false);
@@ -227,6 +242,8 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         chatInputRef.current?.uploadFiles(files);
       },
       openResumeSSE: onOpenResumeSSE ? openResumeSSE : undefined,
+      appendAutoAdvanceTurn: onOpenResumeSSE ? appendAutoAdvanceTurn : undefined,
+      ensureAutoAdvanceUserTurn: ensureAutoAdvanceUserTurn,
     }));
 
     useEffect(() => {
@@ -325,16 +342,14 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
 
       const tempGroup =
         Object.groupBy(params?.fileList ?? [], (item) => {
-          const suffix = item.name
-            .substring(item.name.lastIndexOf("."))
-            .toLowerCase();
+          const name = item.name ?? '';
+          const suffix = name.substring(name.lastIndexOf(".")).toLowerCase();
           return allowedImageTypes.includes(suffix) ? "image" : "file";
         }) ?? {};
       const tempFileGroup =
         Object.groupBy(params?.files ?? [], (item) => {
-          const suffix = item.name
-            .substring(item.name.lastIndexOf("."))
-            .toLowerCase();
+          const name = item.name ?? '';
+          const suffix = name.substring(name.lastIndexOf(".")).toLowerCase();
           return allowedImageTypes.includes(suffix) ? "image" : "file";
         }) ?? {};
 
@@ -388,18 +403,25 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
 
       isMouseScrollingRef.current = true;
       scrollToEnd();
-      openSSE(inputs, ChatConversationsRequestActionEnum.ChatActionNext);
+      openSSE(inputs, ChatConversationsRequestActionEnum.ChatActionNext, {
+        ...(params.run_in_background ? { run_in_background: true } : {}),
+        ...(params.ask_response ? { ask_response: params.ask_response } : {}),
+      });
 
       const currentId = currentConversationIdRef.current;
       if (currentId) {
         conversationMessagesCache.current.set(currentId, newMessageList);
         streamManager.saveMessageList(currentId, newMessageList);
+        if (!currentId.startsWith("temp_")) {
+          emitConversationActivity({ conversationId: currentId });
+        }
       }
     }
 
     const openSSE = async (
       input: any[],
       action: ChatConversationsRequestActionEnum,
+      extras?: Record<string, unknown>,
     ) => {
       activeStreamRef.current = true;
       setLoading(true);
@@ -409,6 +431,9 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       if (!conversationId) {
         conversationId = `temp_${Date.now()}_${Math.random().toString(36).substring(2, 15)}`;
         currentConversationIdRef.current = conversationId;
+        // Record this temp_id so we can locate its cache when the real id arrives
+        // and this stream has already become a background stream.
+        tempIdToRealIdRef.current.set(conversationId, conversationId);
       } else {
         sessionStorage.setItem(CHAT_RESUME_CONVERSATION_KEY, conversationId);
       }
@@ -418,7 +443,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         timeout: (e) => onTimeout(e),
       };
 
-      const sseOrPromise = onOpenSSE(input, action, {});
+      const sseOrPromise = onOpenSSE(input, action, {}, extras);
       const sse = sseOrPromise instanceof Promise ? await sseOrPromise : sseOrPromise;
       sseRef.current = sse;
 
@@ -451,8 +476,60 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       }
     };
 
+    async function syncGeneratingHistory(conversationId: string) {
+      try {
+        const statusRes = await ChatServiceApi().conversationServiceGetChatStatus({
+          conversationId,
+        });
+        if (!statusRes.data?.is_generating) {
+          return;
+        }
+        const historyRes =
+          await ChatServiceApi().conversationServiceGetConversationHistory({
+            name: conversationId,
+          });
+        const apiList = buildChatMessageListFromHistory(historyRes.data.history, {
+          isGenerating: true,
+        });
+        if (apiList.length === 0) {
+          return;
+        }
+        const cached = conversationMessagesCache.current.get(conversationId) ?? [];
+        const baseList =
+          currentConversationIdRef.current === conversationId
+            ? messageListRef.current
+            : cached;
+        const merged = mergeChatMessageLists(apiList, baseList);
+        conversationMessagesCache.current.set(conversationId, merged);
+        streamManager.saveMessageList(conversationId, merged);
+        if (currentConversationIdRef.current === conversationId) {
+          messageListRef.current = merged;
+          setMessageList(merged);
+          isMouseScrollingRef.current = true;
+          scrollToEnd();
+        }
+      } catch {
+        // ignore sync failures; resume SSE still proceeds
+      }
+    }
+
     function openResumeSSE(conversationId: string) {
       if (!onOpenResumeSSE) {
+        return;
+      }
+      if (streamManager.hasActiveStream(conversationId)) {
+        if (currentConversationIdRef.current === conversationId) {
+          activeStreamRef.current = true;
+          setLoading(true);
+          setIS_STREAMING(true);
+          const callbacks: Record<string, (e: CustomEvent) => void> = {
+            message: (e) => onMessage(e),
+            error: (e) => onError(e),
+            timeout: (e) => onTimeout(e),
+          };
+          streamManager.restoreStreamCallbacks(conversationId, callbacks);
+          sseRef.current = streamManager.getStream(conversationId) ?? sseRef.current;
+        }
         return;
       }
       activeStreamRef.current = true;
@@ -475,6 +552,90 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       streamManager.saveMessageList(conversationId, currentList);
       sessionStorage.setItem(CHAT_RESUME_CONVERSATION_KEY, conversationId);
     }
+
+    function ensureAutoAdvanceUserTurn(conversationId: string, driverMessage: string) {
+      const text = (driverMessage || '').trim();
+      if (!text) return;
+
+      const cached = conversationMessagesCache.current.get(conversationId) ?? [];
+      const sourceList =
+        currentConversationIdRef.current === conversationId
+          ? messageListRef.current
+          : cached;
+      const lastUser = sourceList.findLast(
+        (msg) => msg?.role === RoleTypes.USER,
+      );
+      const alreadyHasUserTurn =
+        lastUser?.delta === text ||
+        lastUser?.display_delta === text;
+
+      if (alreadyHasUserTurn) {
+        conversationMessagesCache.current.set(conversationId, sourceList);
+        streamManager.saveMessageList(conversationId, sourceList);
+        return;
+      }
+
+      const create_time = new Date().toISOString();
+      const userMessage = {
+        delta: text,
+        display_delta: text,
+        role: RoleTypes.USER,
+        inputs: [{ input_type: 'text', text }],
+        finish_reason:
+          ChatConversationsResponseFinishReasonEnum.FinishReasonStop,
+        create_time,
+        model_mode: 'value_engineering',
+        auto_advance: true,
+      };
+      const assistantMessage = {
+        role: RoleTypes.ASSISTANT,
+        delta: '',
+        reasoning_content: '',
+        finish_reason:
+          ChatConversationsResponseFinishReasonEnum.FinishReasonUnspecified,
+        answers: [],
+        sources: [],
+        model_mode: 'value_engineering',
+      };
+      const nextList = [...sourceList, userMessage, assistantMessage];
+      conversationMessagesCache.current.set(conversationId, nextList);
+      streamManager.saveMessageList(conversationId, nextList);
+
+      if (currentConversationIdRef.current === conversationId) {
+        messageListRef.current = nextList;
+        setMessageList(nextList);
+        isMouseScrollingRef.current = true;
+        scrollToEnd();
+      }
+    }
+
+    function appendAutoAdvanceTurn(conversationId: string, driverMessage: string) {
+      ensureAutoAdvanceUserTurn(conversationId, driverMessage);
+      openResumeSSE(conversationId);
+    }
+
+    useEffect(() => {
+      const handleAutoAdvance = (event: Event) => {
+        const detail = (event as CustomEvent<ChatAutoAdvanceDetail>).detail;
+        if (!detail?.conversationId) return;
+        if (detail.phase === 'append') {
+          ensureAutoAdvanceUserTurn(detail.conversationId, detail.driverMessage || '');
+          return;
+        }
+        if (detail.phase === 'resume') {
+          if (detail.conversationId !== currentConversationIdRef.current) {
+            return;
+          }
+          void syncGeneratingHistory(detail.conversationId).finally(() => {
+            openResumeSSE(detail.conversationId);
+          });
+        }
+      };
+      window.addEventListener(CHAT_AUTO_ADVANCE_EVENT, handleAutoAdvance);
+      return () => {
+        window.removeEventListener(CHAT_AUTO_ADVANCE_EVENT, handleAutoAdvance);
+      };
+    }, []);
 
     function closeSSE() {
       sseRef.current = null;
@@ -527,6 +688,31 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         }
       } else {
         isActiveConversation = currentConversationIdAtStart === "";
+      }
+
+      // When the user switched away before the first server frame arrived,
+      // isFirstTimeReceivingId (below) won't fire because isActiveConversation
+      // is false. We still need to migrate the cached message list from the
+      // temp_id key to the real_id key so that switching back can find it.
+      if (
+        messageConversationId &&
+        !isActiveConversation
+      ) {
+        // Find if there's a temp_id whose cache should be migrated to this real_id.
+        for (const [tempKey] of tempIdToRealIdRef.current) {
+          if (
+            tempKey.startsWith("temp_") &&
+            conversationMessagesCache.current.has(tempKey) &&
+            !conversationMessagesCache.current.has(messageConversationId)
+          ) {
+            const cachedList = conversationMessagesCache.current.get(tempKey)!;
+            conversationMessagesCache.current.set(messageConversationId, cachedList);
+            conversationMessagesCache.current.delete(tempKey);
+            streamManager.saveMessageList(messageConversationId, cachedList);
+            tempIdToRealIdRef.current.delete(tempKey);
+            break;
+          }
+        }
       }
 
       const isFirstTimeReceivingId =
@@ -612,6 +798,19 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             streamManager.saveMessageList(result.conversation_id, currentList);
           }
         }
+
+        const firstUserMessage = messageListRef.current.find(
+          (item) => item.role === RoleTypes.USER,
+        );
+        const initialDisplayName = (
+          firstUserMessage?.display_delta ||
+          firstUserMessage?.delta ||
+          ""
+        ).trim();
+        emitConversationActivity({
+          conversationId: result.conversation_id,
+          displayName: initialDisplayName || undefined,
+        });
       }
 
       if (
@@ -635,7 +834,12 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
           messageConversationId || currentConversationIdAtStart;
         if (cleanupConversationId) {
           streamManager.closeAndCleanup(cleanupConversationId);
-          conversationMessagesCache.current.delete(cleanupConversationId);
+          // Only clear cache for the active conversation. If the stream finished
+          // in the background (user switched away), keep the cache so the user
+          // can switch back and see the completed messages without a blank screen.
+          if (isActiveConversation) {
+            conversationMessagesCache.current.delete(cleanupConversationId);
+          }
         }
         sessionStorage.removeItem(CHAT_RESUME_CONVERSATION_KEY);
       }
@@ -655,17 +859,6 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
           assistantMessage.role !== RoleTypes.ASSISTANT ||
           isLastAssistantCompleted
         ) {
-          if (isLastAssistantCompleted) {
-            newList.push({
-              role: RoleTypes.USER,
-              delta: "",
-              finish_reason:
-                ChatConversationsResponseFinishReasonEnum.FinishReasonStop,
-              inputs: [],
-              is_resumed: true,
-            });
-          }
-
           assistantMessage = {
             role: RoleTypes.ASSISTANT,
             delta: "",
@@ -890,9 +1083,10 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
         const streamState = streamManager.getStreamState(id);
         if (streamState) {
           const cachedList = conversationMessagesCache.current.get(id);
+          const baseList = mergeChatMessageLists(list, cachedList);
 
-          if (cachedList && cachedList.length > 0) {
-            const savedList = [...cachedList];
+          if (baseList.length > 0) {
+            const savedList = [...baseList];
             const lastIndex = savedList.length - 1;
             if (savedList[lastIndex]?.role === RoleTypes.ASSISTANT) {
               savedList[lastIndex] = {
@@ -906,6 +1100,8 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             }
             messageListRef.current = savedList;
             setMessageList(savedList);
+            conversationMessagesCache.current.set(id, savedList);
+            streamManager.saveMessageList(id, savedList);
             setLoading(true);
             if (
               streamState.finish_reason ===
@@ -1253,6 +1449,10 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
       isMouseScrollingRef.current = true;
       scrollToEnd();
       openSSE(rebuiltInputs, ChatConversationsRequestActionEnum.ChatActionRegeneration);
+
+      if (currentId && !currentId.startsWith("temp_")) {
+        emitConversationActivity({ conversationId: currentId });
+      }
     }
 
     function renderText(item: any, uniqueKey?: string) {
@@ -1546,6 +1746,7 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             rerankReady={rerankReady}
             sessionId={sessionId}
             isStreaming={IS_STREAMING}
+            onStopGeneration={stopGeneration}
             disabled={!canChat}
             disabledReason={disabledReason}
             disabledDescription={disabledDescription}
@@ -1553,6 +1754,9 @@ const ChatContainerComponent = forwardRef<ChatImperativeProps, Props>(
             citeMessages={citeMessages}
             onRemoveCiteMessage={handleRemoveCiteMessage}
             onClearCiteMessage={() => setCiteMessages([])}
+            onPluginSettingsChange={onPluginSettingsChange}
+            initialPluginSettings={initialPluginSettings}
+            hasPluginSession={hasPluginSession}
           />
         </div>
       </div>

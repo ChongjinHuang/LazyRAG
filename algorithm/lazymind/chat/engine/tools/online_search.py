@@ -43,7 +43,35 @@ def _normalize_sources(sources: Optional[List[str]]) -> List[str]:
         s = (s or '').strip().lower()
         if s in valid:
             normalized.append(s)
+    normalized = list(dict.fromkeys(normalized))
     return normalized if normalized else ['feishu', 'notion']
+
+
+def _truncate_grouped_results(
+    result: Dict[str, Any], sources: List[str], max_results: int,
+) -> None:
+    """Keep at most max_results while giving each requested source a chance."""
+    kept = {source: [] for source in sources}
+    indexes = {source: 0 for source in sources}
+    while sum(len(items) for items in kept.values()) < max_results:
+        added = False
+        for source in sources:
+            source_result = result.get(source) or {}
+            items = source_result.get('items') or []
+            index = indexes[source]
+            if index < len(items):
+                kept[source].append(items[index])
+                indexes[source] += 1
+                added = True
+                if sum(len(items) for items in kept.values()) >= max_results:
+                    break
+        if not added:
+            break
+    for source in sources:
+        if source not in result:
+            continue
+        result[source]['items'] = kept[source]
+        result[source]['total'] = len(kept[source])
 
 
 def _filter_by_title_pattern(items: List[Dict[str, Any]], pattern: str) -> List[Dict[str, Any]]:
@@ -121,14 +149,13 @@ class OnlineSearchToolGroup:
         sources = _normalize_sources(sources)
 
         result: Dict[str, Any] = {}
-        per_source = max(1, max_results // len(sources))
         feishu_scope = feishu_space_id or scope
 
         if 'feishu' in sources:
             try:
                 fs = _get_feishu_fs()
                 feishu_results = fs.search(
-                    query, space_id=feishu_scope, page_size=per_source,
+                    query, space_id=feishu_scope, page_size=max_results,
                 )
                 feishu_results = _filter_by_title_pattern(feishu_results, filename_scope)
                 result['feishu'] = {
@@ -147,7 +174,7 @@ class OnlineSearchToolGroup:
             try:
                 fs = _get_notion_fs()
                 notion_results = fs.search(
-                    query, limit=per_source, scope=notion_scope,
+                    query, limit=max_results, scope=notion_scope,
                     title_pattern=filename_scope,
                 )
                 result['notion'] = {
@@ -162,6 +189,7 @@ class OnlineSearchToolGroup:
                     'error': str(exc),
                 }
 
+        _truncate_grouped_results(result, sources, max_results)
         return tool_success('search_online', result)
 
     @handle_tool_errors
@@ -207,14 +235,13 @@ class OnlineSearchToolGroup:
         sources = _normalize_sources(sources)
 
         result: Dict[str, Any] = {}
-        per_source = max(1, max_results // len(sources))
         feishu_scope = feishu_space_id or scope
 
         if 'feishu' in sources:
             try:
                 fs = _get_feishu_fs()
                 feishu_results = fs.find(
-                    pattern, space_id=feishu_scope, max_results=per_source,
+                    pattern, space_id=feishu_scope, max_results=max_results,
                 )
                 result['feishu'] = {
                     'total': len(feishu_results),
@@ -231,7 +258,7 @@ class OnlineSearchToolGroup:
         if 'notion' in sources:
             try:
                 fs = _get_notion_fs()
-                notion_results = fs.find(pattern, limit=per_source, scope=notion_scope)
+                notion_results = fs.find(pattern, limit=max_results, scope=notion_scope)
                 result['notion'] = {
                     'total': len(notion_results),
                     'items': notion_results,
@@ -244,4 +271,5 @@ class OnlineSearchToolGroup:
                     'error': str(exc),
                 }
 
+        _truncate_grouped_results(result, sources, max_results)
         return tool_success('find_online', result)

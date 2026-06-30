@@ -43,7 +43,7 @@ func (q *DBSourceDocumentQuery) ListDocuments(ctx context.Context, req SourceDoc
 		if err != nil {
 			return SourceDocumentListResponse{}, err
 		}
-		if !filefilter.AllowsSourceObject(documentContext.policy, row.Object) {
+		if !filefilter.AllowsSourceObject(documentContext.policy, row.Object) && !treeAllowsUnsupportedDocumentState(&row.State) {
 			removedUnsupported++
 			continue
 		}
@@ -195,7 +195,7 @@ func documentSummaryMap(summary store.SourceSummary) map[string]any {
 		"superseded_task_count": summary.SupersededTaskCount,
 		"storage_bytes":         summary.StorageBytes,
 		"total_document_count":  summary.DocumentObjects,
-		"parsed_document_count": summary.SucceededTaskCount,
+		"parsed_document_count": summary.ParsedDocumentCount,
 		"pending_pull_count":    summary.PendingTaskCount + summary.RunningTaskCount + summary.SubmittedTaskCount,
 	}
 }

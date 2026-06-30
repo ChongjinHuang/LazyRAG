@@ -25,6 +25,7 @@ import { usePluginStore } from "@/modules/chat/store/pluginPanel";
 import { PluginPanel } from "@/modules/chat/components/PluginPanel";
 import MultiAnswerDisplay, { type PreferenceType } from "../MultiAnswerDisplay";
 import FeedbackModal from "../FeedbackModal";
+import AskCard from "@/modules/chat/components/AskCard";
 
 const BotAvatarIcon = new URL(
   "../../assets/images/bot_avatar.png",
@@ -85,7 +86,7 @@ type FeedbackAction =
   | { type: "SUBMIT_START" }
   | {
       type: "SUBMIT_SUCCESS";
-      feedbackType: FeedBackChatHistoryRequestTypeEnum;
+      feedbackType: FeedBackChatHistoryRequestTypeEnum | undefined;
       historyId: string;
     }
   | { type: "SUBMIT_FAIL" }
@@ -102,6 +103,14 @@ function normalizeFeedbackType(
     typeof feedbackType === "string"
       ? feedbackType.trim().toUpperCase()
       : feedbackType;
+  if (
+    normalizedFeedbackType ===
+      FeedBackChatHistoryRequestTypeEnum.FeedBackTypeUnspecified ||
+    normalizedFeedbackType === 0 ||
+    normalizedFeedbackType === "0"
+  ) {
+    return undefined;
+  }
   if (
     normalizedFeedbackType ===
       FeedBackChatHistoryRequestTypeEnum.FeedBackTypeLike ||
@@ -206,11 +215,12 @@ const AssistantMessage = (props: any) => {
 
   const loadActiveSession = usePluginStore((s) => s.loadActiveSession);
   // Eagerly load the plugin session so the panel appears without waiting for component mount.
+  const isLast = index === length - 1;
   useEffect(() => {
-    if (index === length - 1 && sessionId) {
+    if (isLast && sessionId) {
       loadActiveSession(sessionId);
     }
-  }, [index, length, sessionId, loadActiveSession]);
+  }, [isLast, sessionId, loadActiveSession]);
 
   const pluginSession = usePluginStore((s) =>
     sessionId ? s.sessionByConversation[sessionId] ?? null : null,
@@ -446,29 +456,45 @@ const AssistantMessage = (props: any) => {
   }
 
   const createUpdatedItem = (
-    feedbackType: FeedBackChatHistoryRequestTypeEnum,
+    feedbackType: FeedBackChatHistoryRequestTypeEnum | undefined,
     targetHistoryId?: string,
   ) => {
     const resolvedHistoryId = targetHistoryId || item?.history_id;
+
+    const applyFeedbackFields = (
+      record: any,
+      nextFeedBack: FeedBackChatHistoryRequestTypeEnum | undefined,
+    ) => {
+      if (nextFeedBack !== undefined) {
+        return { ...record, feed_back: nextFeedBack };
+      }
+      return {
+        ...record,
+        feed_back: undefined,
+        reason: undefined,
+        expected_answer: undefined,
+      };
+    };
+
     if (resolvedHistoryId && item?.answers) {
       const hasTargetAnswer = item.answers.some(
         (ans: any) => ans.history_id === resolvedHistoryId,
       );
       const updatedAnswers = item.answers.map((ans: any) =>
         ans.history_id === resolvedHistoryId
-          ? { ...ans, feed_back: feedbackType }
+          ? applyFeedbackFields(ans, feedbackType)
           : { ...ans, feed_back: undefined },
       );
-      return {
-        ...item,
-        feed_back:
-          resolvedHistoryId === item?.history_id || !hasTargetAnswer
-            ? feedbackType
-            : undefined,
-        answers: updatedAnswers,
-      };
+      const itemLevelFeedback =
+        resolvedHistoryId === item?.history_id || !hasTargetAnswer
+          ? feedbackType
+          : undefined;
+      return applyFeedbackFields(
+        { ...item, answers: updatedAnswers },
+        itemLevelFeedback,
+      );
     }
-    return { ...item, feed_back: feedbackType };
+    return applyFeedbackFields(item, feedbackType);
   };
 
   
@@ -487,24 +513,28 @@ const AssistantMessage = (props: any) => {
     }
 
     const currentFeedBack = getCurrentFeedback(historyId);
-
-    if (currentFeedBack === type) {
-      return;
-    }
+    const isCancel = currentFeedBack === type;
+    const requestType = isCancel
+      ? FeedBackChatHistoryRequestTypeEnum.FeedBackTypeUnspecified
+      : type;
+    const nextFeedbackType = isCancel ? undefined : type;
 
     dispatch({ type: "SUBMIT_START" });
 
     ChatServiceApi()
       .conversationServiceFeedBackChatHistory({
-        feedBackChatHistoryRequest: { history_id: targetHistoryId, type },
+        feedBackChatHistoryRequest: {
+          history_id: targetHistoryId,
+          type: requestType,
+        },
       })
       .then(() => {
-        const updatedItem = createUpdatedItem(type, targetHistoryId);
+        const updatedItem = createUpdatedItem(nextFeedbackType, targetHistoryId);
         updateMessage(updatedItem);
 
         dispatch({
           type: "SUBMIT_SUCCESS",
-          feedbackType: type,
+          feedbackType: nextFeedbackType,
           historyId: targetHistoryId,
         });
       })
@@ -521,14 +551,18 @@ const AssistantMessage = (props: any) => {
     }
 
     const currentFeedBack = getCurrentFeedback(historyId);
+    const targetHistoryId = historyId || item?.history_id;
 
     if (
       currentFeedBack === FeedBackChatHistoryRequestTypeEnum.FeedBackTypeUnlike
     ) {
+      onFeedBack(
+        FeedBackChatHistoryRequestTypeEnum.FeedBackTypeUnlike,
+        historyId,
+      );
       return;
     }
 
-    const targetHistoryId = historyId || item?.history_id;
     if (!targetHistoryId) {
       message.error(t("chat.historyIdMissingFeedback"));
       return;
@@ -702,11 +736,12 @@ const AssistantMessage = (props: any) => {
               FeedBackChatHistoryRequestTypeEnum.FeedBackTypeLike ? (
                 <LikeFilled
                   className="tool-btn"
-                  style={{
-                    cursor: "not-allowed",
-                    opacity: 0.6,
-                    pointerEvents: "none",
-                  }}
+                  onClick={() =>
+                    onFeedBack(
+                      FeedBackChatHistoryRequestTypeEnum.FeedBackTypeLike,
+                      answerHistoryId,
+                    )
+                  }
                 />
               ) : (
                 <LikeOutlined
@@ -723,11 +758,7 @@ const AssistantMessage = (props: any) => {
               FeedBackChatHistoryRequestTypeEnum.FeedBackTypeUnlike ? (
                 <DislikeFilled
                   className="tool-btn"
-                  style={{
-                    cursor: "not-allowed",
-                    opacity: 0.6,
-                    pointerEvents: "none",
-                  }}
+                  onClick={() => handleDislikeClick(answerHistoryId)}
                 />
               ) : (
                 <DislikeOutlined
@@ -772,11 +803,11 @@ const AssistantMessage = (props: any) => {
             FeedBackChatHistoryRequestTypeEnum.FeedBackTypeLike ? (
               <LikeFilled
                 className="tool-btn"
-                style={{
-                  cursor: "not-allowed",
-                  opacity: 0.6,
-                  pointerEvents: "none",
-                }}
+                onClick={() =>
+                  onFeedBack(
+                    FeedBackChatHistoryRequestTypeEnum.FeedBackTypeLike,
+                  )
+                }
               />
             ) : (
               <LikeOutlined
@@ -792,11 +823,7 @@ const AssistantMessage = (props: any) => {
             FeedBackChatHistoryRequestTypeEnum.FeedBackTypeUnlike ? (
               <DislikeFilled
                 className="tool-btn"
-                style={{
-                  cursor: "not-allowed",
-                  opacity: 0.6,
-                  pointerEvents: "none",
-                }}
+                onClick={() => handleDislikeClick()}
               />
             ) : (
               <DislikeOutlined
@@ -836,6 +863,23 @@ const AssistantMessage = (props: any) => {
             {t("chat.regenerate")}
           </Button>
         </>
+      );
+    }
+    // Render ask_pending card if present
+    if (item.ask_pending) {
+      const askPending = item.ask_pending;
+      const isAnswered = !!item.ask_answered;
+      return (
+        <AskCard
+          askPending={askPending}
+          disabled={isAnswered}
+          onSubmit={(selected) => {
+            props.sendMessage?.({
+              text: '',
+              ask_response: { ask_id: askPending.ask_id, selected },
+            });
+          }}
+        />
       );
     }
     return null;
@@ -940,6 +984,7 @@ const AssistantMessage = (props: any) => {
               key={sessionId}
               conversationId={sessionId}
               onSendMessage={(text) => props.sendMessage?.(text)}
+              onStop={props.stopGeneration}
             />
           )}
         </div>
@@ -992,6 +1037,7 @@ const AssistantMessage = (props: any) => {
             key={sessionId}
             conversationId={sessionId}
             onSendMessage={(text) => props.sendMessage?.(text)}
+            onStop={props.stopGeneration}
           />
         )}
       </div>

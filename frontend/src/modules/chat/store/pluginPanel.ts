@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { PluginInfoApi, PluginSessionApi } from "@/modules/chat/utils/request";
+import { PluginInfoApi, PluginSessionApi, TempUploadServiceApi } from "@/modules/chat/utils/request";
 
 // ---------------------------------------------------------------------------
 // DraftStore — two-layer draft management for slot text editing
@@ -44,10 +44,13 @@ export const draftStore = {
   /** Clear timer and call patchSlotItemValue to produce a human revision. Does NOT clear localStorage.
    *  apiListIndex: when provided, used for the backend PATCH call (e.g. -1 for single slots);
    *  otherwise falls back to the stored entry's apiListIndex, then listIndex.
+   *
+   *  When the original artifact value contained a `path` field (large content was offloaded),
+   *  the draft text is first uploaded via POST /temp/uploads, then the PATCH carries the new
+   *  stored_path instead of the raw text — preserving the large-content offload contract.
    */
   async flushDraft(sessionId: string, slotId: string, listIndex: number, apiListIndex?: number): Promise<void> {
     const key = _draftKey(sessionId, slotId, listIndex);
-    // Try in-memory entry first; fall back to localStorage so page-reload still works.
     let value: Record<string, unknown> | null = null;
     let targetIndex = apiListIndex ?? listIndex;
     const entry = _drafts.get(key);
@@ -60,8 +63,31 @@ export const draftStore = {
       value = draftStore.getLocalDraft(sessionId, slotId, listIndex);
     }
     if (!value) return;
+
+    // Detect large-content (offloaded) draft: value carries {text: string, _isOffloaded: true}
+    // When the original artifact had a `path` field the SlotText component sets _isOffloaded=true
+    // so we know to re-upload the edited text instead of writing it inline to the DB.
+    let patchValue = value;
+    if (value._isOffloaded && typeof value.text === 'string') {
+      try {
+        const text = value.text as string;
+        const blob = new Blob([text], { type: 'text/plain' });
+        const filename = (value._originalFilename as string | undefined) ?? 'artifact.txt';
+        const api = TempUploadServiceApi();
+        const initRes = await api.initUpload({ filename, size: blob.size, content_type: 'text/plain' });
+        const uploadId: string = initRes.data?.data?.upload_id ?? initRes.data?.upload_id;
+        await api.uploadPart(uploadId, 1, blob);
+        const completeRes = await api.completeUpload(uploadId, { parts: [{ part_number: 1, size: blob.size }] });
+        const storedPath: string = completeRes.data?.data?.stored_path ?? completeRes.data?.stored_path;
+        patchValue = { type: 'text', path: storedPath, size: blob.size };
+      } catch {
+        // Upload failed — fall back to inline patch so user doesn't lose their edit
+        patchValue = { text: value.text as string };
+      }
+    }
+
     try {
-      await PluginSessionApi().patchSlotItem(sessionId, slotId, targetIndex, value);
+      await PluginSessionApi().patchSlotItem(sessionId, slotId, targetIndex, patchValue);
     } catch { /* best-effort — ignore */ }
     _drafts.delete(key);
     try { localStorage.removeItem(DRAFT_LS_PREFIX + key); } catch { /* ignore */ }
@@ -134,15 +160,33 @@ export interface PluginSession {
   session_id: string;
   conversation_id: string;
   plugin_id: string;
-  status: "active" | "completed" | "failed" | "waiting";
+  status: "active" | "waiting" | "completed";
   current_step_id: string;
+  /** Global intent/constraint for this session, JSON string e.g. {"text":"..."} */
+  intent_context?: string;
   created_at: string;
   updated_at: string;
   slots?: SlotRevision[];
+  /** Steps for this session, used in completed state to render rollback step list. */
+  steps?: PluginSessionStep[];
   /** The tab currently focused by the user — forwarded to the AI in plugin_context. */
   focusedTab?: string;
   /** The sort_order item currently focused by the user — forwarded to the AI. */
   focusedSortOrder?: number;
+}
+
+/** A single step execution record from plugin_session_steps. */
+export interface PluginSessionStep {
+  id: string;
+  session_id: string;
+  step_id: string;
+  attempt: number;
+  task_id: string;
+  status: string;
+  /** Step-level intent/constraint, JSON string e.g. {"text":"..."} */
+  intent_context?: string;
+  created_at: string;
+  updated_at: string;
 }
 
 // Slot value resolved from a TaskArtifact's value field.
@@ -230,8 +274,6 @@ interface PluginStore {
   loadActiveSession: (conversationId: string) => Promise<void>;
   refreshSlots: (conversationId: string, sessionId: string) => Promise<void>;
   patchSlot: (conversationId: string, sessionId: string, slotId: string, revision: number) => Promise<void>;
-  advanceSession: (conversationId: string, sessionId: string) => Promise<void>;
-  retrySession: (conversationId: string, sessionId: string) => Promise<void>;
   clearSession: (conversationId: string) => void;
   setAutoRunning: (conversationId: string, running: boolean) => void;
   fetchPluginUI: (pluginId: string) => Promise<PluginUI>;
@@ -258,9 +300,22 @@ export const usePluginStore = create<PluginStore>()((set, get) => ({
   slotOrderCache: {},
 
   setSession: (conversationId, session) => {
-    set((state) => ({
-      sessionByConversation: { ...state.sessionByConversation, [conversationId]: session },
-    }));
+    set((state) => {
+      const next: Record<string, any> = {
+        sessionByConversation: { ...state.sessionByConversation, [conversationId]: session },
+      };
+      // If the session is no longer active, clear any stale autoRunning flag synchronously.
+      // This ensures displayStatus is not stuck on 'active' regardless of async timing.
+      if (session && session.status !== 'active') {
+        if (state.autoRunningByConversation[conversationId]) {
+          next.autoRunningByConversation = {
+            ...state.autoRunningByConversation,
+            [conversationId]: false,
+          };
+        }
+      }
+      return next;
+    });
   },
 
   updateSlot: (conversationId, slot) => {
@@ -289,12 +344,26 @@ export const usePluginStore = create<PluginStore>()((set, get) => ({
 
   loadActiveSession: async (conversationId) => {
     if (!conversationId) return;
+    // Deduplicate concurrent calls for the same conversation.
+    if (get().loadingByConversation[conversationId]) return;
     set((s) => ({
       loadingByConversation: { ...s.loadingByConversation, [conversationId]: true },
     }));
     try {
       const res = await PluginSessionApi().getLatestSession(conversationId);
       const session: PluginSession | null = res?.data?.data?.session ?? null;
+      // Load step records for completed and waiting sessions so the Panel can
+      // render the rollback list and step-status badges correctly.
+      if (session && (session.status === 'completed' || session.status === 'waiting') && session.session_id) {
+        try {
+          const stepsRes = await PluginSessionApi().getSteps(session.session_id);
+          const rawSteps = stepsRes?.data?.data?.steps ?? [];
+          // Exclude the __end__ sentinel — only expose real steps to the UI.
+          session.steps = rawSteps.filter((s: any) => s.step_id !== '__end__');
+        } catch {
+          session.steps = [];
+        }
+      }
       get().setSession(conversationId, session);
     } catch {
       // ignore
@@ -336,24 +405,6 @@ export const usePluginStore = create<PluginStore>()((set, get) => ({
     try {
       await PluginSessionApi().patchSlot(sessionId, slotId, revision);
       get().refreshSlots(conversationId, sessionId);
-    } catch {
-      // ignore
-    }
-  },
-
-  advanceSession: async (conversationId, sessionId) => {
-    try {
-      await PluginSessionApi().advanceSession(sessionId, 'continue');
-      get().loadActiveSession(conversationId);
-    } catch {
-      // ignore
-    }
-  },
-
-  retrySession: async (conversationId, sessionId) => {
-    try {
-      await PluginSessionApi().advanceSession(sessionId, 'retry');
-      get().loadActiveSession(conversationId);
     } catch {
       // ignore
     }

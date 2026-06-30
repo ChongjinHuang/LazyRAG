@@ -159,6 +159,21 @@ func attachThreadModelConfig(ctx context.Context, db *gorm.DB, userID string, pa
 	return nil
 }
 
+func hasThreadEvoLLMConfig(payload map[string]any) bool {
+	llmConfig, ok := payload["llm_config"].(map[string]any)
+	if !ok {
+		return false
+	}
+	for key, value := range llmConfig {
+		if !strings.EqualFold(strings.TrimSpace(key), "evo_llm") {
+			continue
+		}
+		roleConfig, ok := value.(map[string]any)
+		return ok && len(roleConfig) > 0
+	}
+	return false
+}
+
 func parseRecordLimit(raw string) int {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -596,34 +611,6 @@ func saveThreadRecordWithOptions(
 	return nil, false, err
 }
 
-func markThreadStepActive(db *gorm.DB, threadID, stepID string) error {
-	threadID = strings.TrimSpace(threadID)
-	stepID = strings.TrimSpace(stepID)
-	if db == nil || threadID == "" || stepID == "" {
-		return nil
-	}
-	now := time.Now().UTC()
-	step := orm.AgentThreadStep{
-		ThreadID:  threadID,
-		StepID:    stepID,
-		Title:     stepID,
-		Status:    "running",
-		Active:    true,
-		StartedAt: &now,
-		CreatedAt: now,
-		UpdatedAt: now,
-	}
-	return db.Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "thread_id"}, {Name: "step_id"}},
-		DoUpdates: clause.Assignments(map[string]any{
-			"status":     "running",
-			"active":     true,
-			"ended_at":   nil,
-			"updated_at": now,
-		}),
-	}).Create(&step).Error
-}
-
 func updateThreadStepFromEvent(db *gorm.DB, threadID, stepID string, event fetchedThreadEvent) error {
 	threadID = strings.TrimSpace(threadID)
 	stepID = strings.TrimSpace(stepID)
@@ -663,7 +650,7 @@ func updateThreadStepFromEvent(db *gorm.DB, threadID, stepID string, event fetch
 	updates := map[string]any{
 		"status":      status,
 		"active":      active,
-		"event_count": gorm.Expr("event_count + ?", 1),
+		"event_count": gorm.Expr("agent_thread_steps.event_count + ?", 1),
 		"ended_at":    endedAt,
 		"updated_at":  now,
 	}
@@ -676,16 +663,50 @@ func updateThreadStepFromEvent(db *gorm.DB, threadID, stepID string, event fetch
 	if hasOrder {
 		updates["order_index"] = orderIndex
 	}
-	return db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "thread_id"}, {Name: "step_id"}},
-		DoUpdates: clause.Assignments(updates),
-	}).Create(&step).Error
+	if nextStepRunID := extractStringByExactKeys(payload, "next_step_run_id"); nextStepRunID != "" {
+		step.NextStepRunID = nextStepRunID
+		updates["next_step_run_id"] = gorm.Expr(
+			"CASE WHEN agent_thread_steps.next_step_run_id = ? THEN ? ELSE agent_thread_steps.next_step_run_id END",
+			"",
+			nextStepRunID,
+		)
+	}
+	return db.Transaction(func(tx *gorm.DB) error {
+		if active {
+			if err := markOtherThreadStepsInactive(tx, threadID, stepID, now); err != nil {
+				return err
+			}
+		}
+		return tx.Clauses(clause.OnConflict{
+			Columns:   []clause.Column{{Name: "thread_id"}, {Name: "step_id"}},
+			DoUpdates: clause.Assignments(updates),
+		}).Create(&step).Error
+	})
+}
+
+func markOtherThreadStepsInactive(db *gorm.DB, threadID, stepID string, now time.Time) error {
+	return db.Model(&orm.AgentThreadStep{}).
+		Where("thread_id = ? AND step_id <> ? AND active = ?", threadID, stepID, true).
+		Updates(map[string]any{
+			"active":     false,
+			"status":     gorm.Expr("CASE WHEN status = ? THEN ? ELSE status END", "running", "succeeded"),
+			"ended_at":   gorm.Expr("COALESCE(ended_at, ?)", now),
+			"updated_at": now,
+		}).Error
 }
 
 func normalizeThreadStepStatus(rawStatus, eventName string) string {
 	status := strings.ToLower(strings.TrimSpace(rawStatus))
-	if status == "" {
-		status = strings.ToLower(strings.TrimSpace(eventName))
+	event := strings.ToLower(strings.TrimSpace(eventName))
+	switch {
+	case strings.Contains(status, "cancel"):
+		return "cancelled"
+	case strings.Contains(status, "fail") || strings.Contains(status, "error"):
+		return "failed"
+	case event == "done":
+		return "succeeded"
+	case status == "":
+		status = event
 	}
 	switch {
 	case status == "":

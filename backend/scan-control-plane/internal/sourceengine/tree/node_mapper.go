@@ -77,6 +77,21 @@ func bindingRootNode(binding store.Binding) TreeNode {
 	}
 }
 
+func bindingRootNodeWithObject(node TreeNode, item ObjectWithState) TreeNode {
+	objectNode := sourceObjectNode(item)
+	node.DisplayName = objectNode.DisplayName
+	node.SearchName = objectNode.SearchName
+	node.SourceState = objectNode.SourceState
+	node.SyncState = objectNode.SyncState
+	node.PendingAction = objectNode.PendingAction
+	node.ParseQueueState = objectNode.ParseQueueState
+	node.HasUpdate = objectNode.HasUpdate
+	node.UpdateType = objectNode.UpdateType
+	node.UpdateDesc = objectNode.UpdateDesc
+	node.ProviderMeta = objectNode.ProviderMeta
+	return node
+}
+
 func sourceObjectNode(item ObjectWithState) TreeNode {
 	object := item.Object
 	selectableContainer := object.IsContainer || object.HasChildren
@@ -235,7 +250,7 @@ func supportsDocumentDownloadStatus(binding store.Binding) bool {
 
 func documentDownloadInProgressState(parseState string) bool {
 	switch parseState {
-	case parseStateQueued, parseStatePendingParse, store.ParseTaskStatusPending, store.ParseTaskStatusRunning:
+	case parseStateQueued, store.ParseTaskStatusPending, store.ParseTaskStatusRunning:
 		return true
 	default:
 		return false
@@ -414,6 +429,8 @@ func updateTypeForState(sourceState string) string {
 		return "changed"
 	case "DELETED":
 		return "deleted"
+	case "OUT_OF_SCOPE":
+		return "cleanup"
 	default:
 		return "unchanged"
 	}
@@ -427,6 +444,8 @@ func updateDescForType(updateType string) string {
 		return "内容变化待重解析"
 	case "deleted":
 		return "源端删除待清理"
+	case "cleanup":
+		return "待清理"
 	default:
 		return "当前文件已是最新"
 	}

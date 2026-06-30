@@ -28,11 +28,11 @@ type ModelCapability =
   | "embed_main"
   | "vlm"
   | "reranker"
-  | "stt"
+  | "speech_to_text"
   | "tts"
-  | "text2image"
+  | "image_generator"
   | "embed_image"
-  | "image_editing"
+  | "image_editor"
   | "evo_llm";
 
 interface ProviderModel {
@@ -212,17 +212,17 @@ const moduleConfigs: ModuleConfig[] = [
     subtitleKey: "modelProvider.module.rerankSubtitle",
   },
   {
-    key: "stt",
+    key: "speech_to_text",
     titleKey: "modelProvider.module.asrTitle",
     subtitleKey: "modelProvider.module.asrSubtitle",
   },
   {
-    key: "text2image",
+    key: "image_generator",
     titleKey: "modelProvider.module.textToImageTitle",
     subtitleKey: "modelProvider.module.textToImageSubtitle",
   },
   {
-    key: "image_editing",
+    key: "image_editor",
     titleKey: "modelProvider.module.imageEditingTitle",
     subtitleKey: "modelProvider.module.imageEditingSubtitle",
   },
@@ -258,6 +258,9 @@ const cloudServiceCategoryBySlot = cloudServiceConfigs.reduce(
 
 const selectedCapabilityByModelType: Record<string, ModelCapability> = {
   evo_llm: "evo_llm",
+  stt: "speech_to_text",
+  text2image: "image_generator",
+  image_editing: "image_editor",
 };
 
 function normalizeProviderKey(value: string) {
@@ -337,6 +340,13 @@ function getCapabilityByModelType(
     return selectedCapability;
   }
   return moduleConfigs.find((module) => module.key === normalized)?.key;
+}
+
+function getModelTypeByCapability(capability: ModelCapability): string {
+  const entry = Object.entries(selectedCapabilityByModelType).find(
+    ([, cap]) => cap === capability,
+  );
+  return entry ? entry[0] : capability;
 }
 
 const createModelProviderFallbacks = (
@@ -705,7 +715,7 @@ export default function DefaultModelConfigPanel() {
             moduleConfigs.map(async (module) => {
               const response = await modelProvidersDefaultApi.apiCoreModelProvidersModelsReadyGet(
                 withModelProviderJsonOptions({
-                  params: { model_type: module.key },
+                  params: { model_type: getModelTypeByCapability(module.key) },
                 }),
               );
               return {
@@ -773,7 +783,7 @@ export default function DefaultModelConfigPanel() {
     setModuleModelLoading((current) => ({ ...current, [capability]: true }));
     try {
       const response = await modelProvidersApi.apiCoreModelProvidersModelsGet({
-        modelType: capability,
+        modelType: getModelTypeByCapability(capability),
       });
       const data = unwrapModelProviderData<{
         models?: Array<
@@ -870,7 +880,7 @@ export default function DefaultModelConfigPanel() {
   ) => {
     const selections = [
       {
-        model_key: capability,
+        model_key: getModelTypeByCapability(capability),
         model_id: value ? parseModelValue(value).modelId : "",
       },
     ];
@@ -902,7 +912,7 @@ export default function DefaultModelConfigPanel() {
         withModelProviderJsonOptions({
           data: {
             model_id: parseModelValue(value).modelId,
-            model_key: capability,
+            model_key: getModelTypeByCapability(capability),
             share,
           },
         }),

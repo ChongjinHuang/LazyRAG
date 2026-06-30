@@ -97,9 +97,9 @@ def test_search_online_passes_source_specific_scopes(monkeypatch):
     )
 
     assert payload['success'] is True
-    assert feishu.search_calls == [('Project', 'wikcnScope', 4)]
+    assert feishu.search_calls == [('Project', 'wikcnScope', 8)]
     assert notion.search_calls == [
-        ('Project', 4, 'notion:/~data_source/11111111222233334444555555555555', 'Plan$')
+        ('Project', 8, 'notion:/~data_source/11111111222233334444555555555555', 'Plan$')
     ]
     assert payload['result']['feishu']['items'] == [{'title': 'Project Plan', 'node_token': 'node1'}]
 
@@ -120,7 +120,25 @@ def test_find_online_passes_source_specific_scopes(monkeypatch):
     )
 
     assert payload['success'] is True
-    assert feishu.find_calls == [('^Project', 'wikcnScope', 5)]
+    assert feishu.find_calls == [('^Project', 'wikcnScope', 10)]
     assert notion.find_calls == [
-        ('^Project', 5, 'notion:/~database/11111111222233334444555555555555')
+        ('^Project', 10, 'notion:/~database/11111111222233334444555555555555')
     ]
+
+
+def test_sources_are_deduplicated_and_total_results_are_capped(monkeypatch):
+    online_search = _load_online_search_module()
+    feishu = _FakeFeishuFS()
+    notion = _FakeNotionFS()
+    monkeypatch.setattr(online_search, '_get_feishu_fs', lambda: feishu)
+    monkeypatch.setattr(online_search, '_get_notion_fs', lambda: notion)
+
+    payload = online_search.OnlineSearchToolGroup().search_online(
+        'Project', sources=['feishu', 'feishu', 'notion'], max_results=2,
+    )
+
+    assert feishu.search_calls == [('Project', '', 2)]
+    assert notion.search_calls == [('Project', 2, '', '')]
+    assert sum(group['total'] for group in payload['result'].values()) == 2
+    assert payload['result']['feishu']['total'] == 1
+    assert payload['result']['notion']['total'] == 1

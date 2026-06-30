@@ -1,7 +1,6 @@
 from __future__ import annotations
 import asyncio
 import json
-import os
 import re
 import time
 from typing import Any, Dict, List, Optional, Union
@@ -17,6 +16,7 @@ from lazymind.chat.config import (
     SENSITIVE_WORDS_PATH,
 )
 from lazymind.chat.engine.prompts import build_system_prompt
+from lazymind.chat.service.chat_request import ChatRequest
 from lazymind.chat.service.component import (
     AgentEventFrameTranslator,
     DEFAULT_TOOLS,
@@ -44,6 +44,10 @@ from lazymind.config import config as _cfg
 
 rag_sem = asyncio.Semaphore(MAX_CONCURRENCY)
 sensitive_filter = SensitiveFilter(SENSITIVE_WORDS_PATH)
+
+# Maps conversation_id → session_id for active chat sessions.
+# Used by task-cancel endpoint to cancel ChatAgent by conversation_id.
+_active_sessions: dict[str, str] = {}
 _CITE_MESSAGE_PATTERN = re.compile(
     r'<cite_message>([\s\S]*?)</cite_message>\s*',
     re.IGNORECASE,
@@ -85,22 +89,6 @@ def _normalize_kb_id_filter(raw_kb_id: Any) -> str | list[str] | None:
         cleaned = [item.strip() for item in raw_kb_id if isinstance(item, str) and item.strip()]
         return cleaned[0] if len(cleaned) == 1 else (cleaned or None)
     return None
-
-
-def _normalize_localfs_paths(raw_paths: Any) -> list[str]:
-    if raw_paths is None:
-        return []
-    if isinstance(raw_paths, str):
-        items = [raw_paths]
-    elif isinstance(raw_paths, list):
-        items = [item for item in raw_paths if isinstance(item, str)]
-    else:
-        return []
-    return [
-        os.path.realpath(path)
-        for item in items
-        if (path := str(item).strip())
-    ]
 
 
 def check_sensitive_content(
@@ -163,6 +151,24 @@ def _build_subagent_chat_tools(has_subagents: bool) -> list:
     return tools
 
 
+def _build_user_attachment_tools(has_files: bool) -> list:
+    """Register find_user_attachment / read_user_attachment when the conversation has uploads."""
+    if not has_files:
+        return []
+    from lazymind.chat.engine.subagent.tools import find_user_attachment, read_user_attachment
+    return [find_user_attachment, read_user_attachment]
+
+
+def _build_schedule_tools() -> list:
+    """Return a lazy ToolGroup dict for all schedule management tools.
+
+    Injected as a single lazy group so the LLM only sees the gateway tool until
+    the user mentions scheduling topics.
+    """
+    from lazymind.chat.engine.tools.schedule import build_schedule_tool_group
+    return [build_schedule_tool_group()]
+
+
 def _collect_active_tool_names(configs: list) -> set[str]:
     # Build a per-request callable allowlist from filtered tool configs.
     # This is consumed by tool_runtime guard to prevent accidental execution
@@ -185,40 +191,159 @@ def _collect_active_tool_names(configs: list) -> set[str]:
     return names
 
 
-async def handle_chat(query: str, history: Optional[List[Dict[str, Any]]],
-                      session_id: str, filters: Optional[Dict[str, Any]],
-                      files: Optional[List[str]],
-                      databases: Optional[List[Dict[str, Any]]],
-                      priority: Optional[int], disabled_tools: Optional[List[str]],
-                      available_skills: Optional[List[str]], memory: Optional[str],
-                      user_preference: Optional[str], use_memory: Optional[bool],
-                      environment_context: Optional[Dict[str, Any]] = None,
-                      user_id: Optional[str] = None,
-                      conversation_id: Optional[str] = None,
-                      mode: Optional[str] = 'auto',
-                      has_subagents: Optional[bool] = False,
-                      model_config: Optional[Dict[str, Any]] = None,
-                      tool_config: Optional[Dict[str, Union[str, List[str]]]] = None,
-                      mcp_config: Optional[List[Dict[str, Any]]] = None,
-                      trace: Optional[bool] = False,
-                      plugin_context: Optional[Dict[str, Any]] = None,
-                      ) -> Union[Dict[str, Any], StreamingResponse]:
+def _build_user_attachment_context(history_files_per_turn: Dict[str, List[str]],
+                                   current_turn_seq: Optional[int] = None) -> str:
+    """Build the '## User Uploaded Files' context section from history_files_per_turn.
+
+    history_files_per_turn is a map of "<seq>" -> [file_paths...] where seq is a
+    1-based integer string matching the conversation turn sequence number.
+    Only turns with actual attachments appear as keys (empty turns are omitted by Go).
+
+    current_turn_seq: the authoritative seq for the current request turn, provided by
+    Go core. When not None it is used as the marker for 当前轮次. If the current turn
+    has no files it will not appear in the map, and no 当前轮次 marker is shown.
+    Falls back to max(keys) only when current_turn_seq is not provided (legacy callers).
+
+    Returns an empty string when there are no files.
+    The current turn (if it has files) is listed first with a [当前轮次] marker.
+    Historical turns follow in descending seq order.
+    """
+    if not history_files_per_turn:
+        return ''
+
+    # Parse all keys as integers (seq); skip unparseable entries.
+    turns: Dict[int, List[str]] = {}
+    for key, paths in history_files_per_turn.items():
+        if not paths:
+            continue
+        try:
+            turns[int(key)] = paths
+        except ValueError:
+            continue
+
+    if not turns:
+        return ''
+
+    def _describe_file(path: str) -> str:
+        import os as _os
+        name = _os.path.basename(path)
+        try:
+            size_bytes = _os.path.getsize(path)
+            if size_bytes < 1024:
+                size_str = f'{size_bytes} B'
+            elif size_bytes < 1024 * 1024:
+                size_str = f'{size_bytes / 1024:.1f} KB'
+            else:
+                size_str = f'{size_bytes / (1024 * 1024):.1f} MB'
+            return f'{name} ({size_str})'
+        except OSError:
+            return name
+
+    def _dedupe_names(paths: List[str]) -> List[tuple[str, str]]:
+        """Return (display_name, abs_path) pairs with intra-turn dedup."""
+        seen: Dict[str, int] = {}
+        result: List[tuple[str, str]] = []
+        import os as _os
+        for path in paths:
+            base = _os.path.basename(path)
+            name_no_ext, ext = _os.path.splitext(base)
+            if base not in seen:
+                seen[base] = 0
+                display = _describe_file(path)
+            else:
+                seen[base] += 1
+                n = seen[base]
+                new_base = f'{name_no_ext}-{n}{ext}'
+                try:
+                    import os as _os2
+                    size_bytes = _os2.path.getsize(path)
+                    if size_bytes < 1024:
+                        size_str = f'{size_bytes} B'
+                    elif size_bytes < 1024 * 1024:
+                        size_str = f'{size_bytes / 1024:.1f} KB'
+                    else:
+                        size_str = f'{size_bytes / (1024 * 1024):.1f} MB'
+                    display = f'{new_base} ({size_str})'
+                except OSError:
+                    display = new_base
+            result.append((display, path))
+        return result
+
+    # Determine which seq is the current turn.
+    # Prefer the authoritative value from Go (current_turn_seq); fall back to max(keys)
+    # only when the caller did not provide it (legacy path).
+    # If current_turn_seq is provided but has no attachments this turn, no 当前轮次 marker
+    # is shown — the map simply won't contain that key.
+    if current_turn_seq is not None and current_turn_seq in turns:
+        _cur = current_turn_seq
+    elif current_turn_seq is None:
+        _cur = max(turns.keys())  # legacy fallback
+    else:
+        _cur = None  # current turn exists but has no attachments — no marker
+
+    lines: List[str] = ['## User Uploaded Files [queried at request time]']
+
+    # Descending order: current turn first (if it has files), then historical turns newest-first.
+    for seq in sorted(turns.keys(), reverse=True):
+        pairs = _dedupe_names(turns[seq])
+        file_list = ', '.join(name for name, _ in pairs)
+        if seq == _cur:
+            lines.append(f'- [Turn {seq} 当前轮次]: {file_list}')
+        else:
+            lines.append(f'- [Turn {seq}]: {file_list}')
+
+    if _cur is None:
+        lines.append('')
+        lines.append('Note: the current turn has no attachments. All entries above are historical.')
+
+    lines.append('')
+    lines.append(
+        'Rules: Turn numbers are 1-based integers. '
+        'When the user says "this image / 这张图 / 这个文件" without specifying a turn, '
+        'default to the CURRENT TURN attachment (marked 当前轮次 above). '
+        'Only fall back to historical turns when the user explicitly references a past turn '
+        'or when the current turn has no attachments.'
+    )
+    lines.append("To read a file's content, call read_user_attachment(filename, turn=N).")
+    lines.append("To get a file's accessible path, call find_user_attachment(filename, turn=N).")
+    lines.append('When passing an attachment path to save_plugin_artifact, always use the `path` field '
+                 '(local absolute path) from find_user_attachment, NOT the `url` field.')
+
+    return '\n'.join(lines)
+
+
+async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingResponse]:
+    message = request.message
+    conversation = request.conversation
+    retrieval = request.retrieval
+    runtime = request.runtime
+    personalization = request.personalization
+    agent = request.agent
+    plugin = request.plugin
+
+    conversation_id = (conversation.conversation_id or '').strip()
+    user_id = (conversation.user_id or '').strip()
     LOG.info(
-        f'[ChatServer] [MODEL_CONFIG_RECEIVED] [sid={session_id}] [user_id={user_id or ""}] '
-        f'[{summarize_model_config_for_log(model_config)}]'
+        f'[ChatServer] [MODEL_CONFIG_RECEIVED] [sid={conversation.session_id}] [user_id={user_id or ""}] '
+        f'[{summarize_model_config_for_log(runtime.llm_config)}]'
     )
     LOG.info(
-        f'[ChatServer] [PLUGIN_CONTEXT] [sid={session_id}] [plugin_context={plugin_context!r}]'
+        f'[ChatServer] [PLUGIN_CONTEXT] [sid={conversation.session_id}] [plugin_context={plugin.plugin_context!r}]'
+    )
+    LOG.info(
+        f'[ChatServer] [TURN_SEQ] [sid={conversation.session_id}] '
+        f'[current_turn_seq={message.current_turn_seq!r}] '
+        f'[files_map_keys={sorted(message.files.keys()) if isinstance(message.files, dict) else None}]'
     )
     start_time = time.time()
-    priority = priority or LAZYMIND_LLM_PRIORITY
-    query, agent_query = _normalize_cite_message_query_for_agent(query)
+    priority = runtime.priority or LAZYMIND_LLM_PRIORITY
+    query, agent_query = _normalize_cite_message_query_for_agent(message.query)
     sensitive_word = check_sensitive_content(query)
     if sensitive_word:
         cost = round(time.time() - start_time, 3)
         LOG.warning(
             f'[ChatServer] [SENSITIVE_FILTER_BLOCKED] [query={query[:50]}...] '
-            f'[sensitive_word={sensitive_word}] [session_id={session_id}]'
+            f'[sensitive_word={sensitive_word}] [session_id={conversation.session_id}]'
         )
         return single_event_stream_response(response_payload(
             200,
@@ -231,89 +356,182 @@ async def handle_chat(query: str, history: Optional[List[Dict[str, Any]]],
             cost,
         ), final_data={'tool_call_turns': 0})
 
-    filters = dict(filters or {})
-    resolved_files = validate_and_resolve_files(files)
+    filters = dict(retrieval.filters or {})
+    files_map: Dict[str, List[str]] = message.files if isinstance(message.files, dict) else {}
+    flat_files: List[str] = []
+    if files_map:
+        for seq_key in sorted((k for k in files_map if k.isdigit()), key=int):
+            flat_files.extend(files_map[seq_key])
+    resolved_files = validate_and_resolve_files(flat_files)
     filters['kb_id'] = _normalize_kb_id_filter(filters.get('kb_id'))
     LOG.info(f'[KBToolGroup_DEBUG] filters={filters!r} kb_id={filters.get("kb_id")!r}')
 
-    raw_history = list(history) if isinstance(history, list) else []
+    raw_history = list(message.history) if isinstance(message.history, list) else []
     agent_history = normalize_history_for_agent(raw_history)
     translator = AgentEventFrameTranslator(query=query)
 
-    # localfs_paths is a path whitelist, not a credential. Keep it request-scoped
-    # in agentic_config and remove it before dynamic credential injection.
-    localfs_paths: list[str] = []
-    if tool_config and isinstance(tool_config, dict):
-        localfs_paths = _normalize_localfs_paths(tool_config.pop('localfs_paths', None))
-
     agentic_config = {
-        'session_id': session_id,
+        'session_id': conversation.session_id,
         'filters': filters if RAG_MODE and filters else {},
         'files': resolved_files,
-        'localfs_paths': localfs_paths,
+        'history_files_per_turn': files_map,
+        'local_fs_sources': retrieval.local_fs_sources or [],
         'priority': priority,
         'user_id': user_id or '',
-        'use_memory': use_memory,
+        'use_memory': personalization.use_memory,
         'citation_state': translator.citation_state,
-        'mode': mode if mode in ('auto', 'manual') else 'auto',
-        'has_subagents': bool(has_subagents),
-        'conversation_id': (conversation_id or '').strip(),
+        'mode': conversation.mode if conversation.mode in ('auto', 'manual') else 'auto',
+        'has_subagents': bool(agent.has_subagents),
+        'conversation_id': conversation_id,
         'query': query or '',
-        'memory': memory or '',
-        'user_preference': user_preference or '',
+        'memory': personalization.memory or '',
+        'user_preference': personalization.user_preference or '',
     }
+    # Inject per-conversation plugin flags from Go (resolved from conversations table).
+    # enable_plugin=None means "not set"; default to True so behaviour is unchanged
+    # for callers that do not yet pass the field.
+    if plugin.enable_plugin is not None:
+        agentic_config['enable_plugin'] = bool(plugin.enable_plugin)
+    if agent.enable_subagent is not None:
+        agentic_config['enable_subagent'] = bool(agent.enable_subagent)
+    # plugin_mode is consumed directly from plugin_context by resolve_plugin_injection
+    # (where it is only meaningful when enable_plugin=true); no need to store it in
+    # agentic_config separately.
+
     display_files: list[str] = []
+    # Use the authoritative current_turn_seq from Go; fall back to max(keys) only as a
+    # last resort (handles callers that do not yet pass the field).
+    _eff_current_seq: int | None = message.current_turn_seq
+    if _eff_current_seq is None and files_map:
+        int_keys = [int(k) for k in files_map if k.isdigit() and files_map[k]]
+        if int_keys:
+            _eff_current_seq = max(int_keys)
+    current_turn_paths: set[str] = (set(files_map.get(str(_eff_current_seq), []))
+                                    if _eff_current_seq is not None else set())
+
     for path in resolved_files:
         if path.lower().endswith(IMAGE_EXTENSIONS):
             register_image_url(translator.citation_state, path)
-            display_files.append(basename_from_path(path) or path)
+            name = basename_from_path(path) or path
         else:
-            display_files.append(path)
+            name = path
+        if path in current_turn_paths:
+            display_files.append(f'{name} [当前轮次]')
+        else:
+            display_files.append(name)
 
-    from lazymind.chat.plugin.plugin_manager import resolve_plugin_injection
-    plugin_tools, plugin_system_prompt, plugin_stop_tools, agentic_config_patch = \
-        resolve_plugin_injection(plugin_context, conversation_id=(conversation_id or '').strip())
+    from lazymind.chat.plugin.plugin_manager import (
+        resolve_plugin_injection,
+        _build_chat_agent_task_context,
+    )
+    # Register the active session so the cancel endpoint can find it by conversation_id.
+    _conv_id_key = conversation_id  # already stripped above
+    if _conv_id_key:
+        _active_sessions[_conv_id_key] = conversation.session_id
+    lazyllm.globals._init_sid(sid=conversation.session_id)
+    lazyllm.locals._init_sid(sid=conversation.session_id)
+    inject_model_config(runtime.llm_config)
+    inject_tool_config(runtime.tool_config)
+    lazyllm.globals['agentic_config'] = agentic_config
+
+    plugin_tools, plugin_system_prompt, plugin_stop_tools, agentic_config_patch, plugin_artifact_context = \
+        resolve_plugin_injection(plugin.plugin_context, conversation_id=conversation_id,
+                                 ask_response=plugin.ask_response)
     agentic_config.update(agentic_config_patch)
 
-    lazyllm.globals._init_sid(sid=session_id)
-    lazyllm.locals._init_sid(sid=session_id)
-    inject_model_config(model_config)
-    inject_tool_config(tool_config)
-    lazyllm.globals['agentic_config'] = agentic_config
-    disabled = set(disabled_tools or [])
+    # Inject SubAgent task context into the system prompt independently of plugin state.
+    # Injected when either plugin or subagent is enabled so the model knows about ongoing tasks.
+    # When both are disabled, the task context is suppressed (pure QA mode).
+    _enable_plugin = agentic_config.get('enable_plugin', True)
+    _enable_subagent = agentic_config.get('enable_subagent', True)
+    LOG.info(
+        f'[ChatServer] [PLUGIN_FLAGS] [sid={conversation.session_id}] '
+        f'[enable_plugin={_enable_plugin!r}] [enable_subagent={_enable_subagent!r}] '
+        f'[plugin_tools={[getattr(t, "__name__", str(t)) for t in plugin_tools]!r}]'
+    )
+    # Build user attachment context from files_map and inject before plugin context.
+    user_attachment_context = _build_user_attachment_context(files_map, _eff_current_seq)
+
+    # Prepend artifact context and user attachment context before the user query.
+    parts = []
+    if plugin_artifact_context:
+        parts.append(plugin_artifact_context)
+    if _enable_plugin or _enable_subagent:
+        task_ctx = _build_chat_agent_task_context((conversation_id or '').strip())
+        if task_ctx:
+            # Inject as a per-turn authoritative block (same as plugin_artifact_context)
+            # rather than into the system prompt, so stale task state from history is
+            # overridden by the live snapshot queried at request time.
+            parts.append(task_ctx)
+    if user_attachment_context:
+        parts.append(user_attachment_context)
+    # Inject the authoritative current-turn declaration so the model is never misled
+    # by conversation history into thinking an earlier turn is the current one.
+    if _eff_current_seq is not None:
+        parts.append(
+            f'## Current Request Context [AUTHORITATIVE]\n'
+            f'This is conversation turn **{_eff_current_seq}** (the current turn).\n'
+            f'Any turn number mentioned in the chat history that appears to be "current" '
+            f'is outdated. Turn {_eff_current_seq} is the only present moment.\n'
+            f'When the user says "this image / 这张图 / 这个文件 / 现在 / 本次", '
+            f'they are referring to turn {_eff_current_seq} unless they explicitly name another turn.'
+        )
+    if parts:
+        agent_query = '\n\n---\n\n'.join(parts) + '\n\n---\n\n## User Request\n' + agent_query
+
+    disabled = set(agent.disabled_tools or [])
     active_configs = filter_tools(
         [cfg for cfg in DEFAULT_TOOLS if cfg.name not in disabled],
     )
     # Persist the allowlist in session globals so every @handle_tool_errors-wrapped
     # tool can do a cheap runtime check before executing business logic.
     lazyllm.globals['active_tool_names'] = _collect_active_tool_names(active_configs)
-    # Plugin tools are dynamically injected and pre-validated by resolve_plugin_injection;
-    # add their names to the allowlist so the ToolGuard does not block them.
-    if plugin_stop_tools:
-        lazyllm.globals['active_tool_names'] |= set(plugin_stop_tools)
+    # Plugin tools are dynamically injected and pre-validated by resolve_plugin_injection.
+    # Register ALL plugin_tools (advance_step, find_artifact, save_plugin_artifact, …)
+    # into the allowlist so the ToolGuard does not block any of them.
+    # plugin_stop_tools is only used by set_stop_tools below to control loop exit;
+    # it is not the source of the allowlist.
+    lazyllm.globals['active_tool_names'] |= {
+        getattr(fn, '__name__', '') for fn in plugin_tools if callable(fn)
+    }
     agent_tools = build_agent_tools(active_configs)
-    subagent_tools = _build_subagent_chat_tools(bool(has_subagents))
+    # Respect enable_subagent flag: when false, suppress create_subagent and related tools.
+    enable_subagent = agentic_config.get('enable_subagent', True)
+    subagent_tools = _build_subagent_chat_tools(bool(agent.has_subagents)) if enable_subagent else []
     # SubAgent chat tools (create_subagent, list_subagents, …) are always active;
     # add their names to the allowlist so the ToolGuard does not block them.
     lazyllm.globals['active_tool_names'] |= {
         getattr(fn, '__name__', '') for fn in subagent_tools if callable(fn)
     }
-    mcp_tools = _build_mcp_tools(mcp_config) if mcp_config else []
-    all_tools = agent_tools + subagent_tools + plugin_tools + mcp_tools
+    mcp_tools = _build_mcp_tools(runtime.mcp_config) if runtime.mcp_config else []
+    # User attachment tools are only meaningful when the user has uploaded files.
+    # Register them (and add to allowlist) whenever files_map is non-empty.
+    attachment_tools = _build_user_attachment_tools(bool(files_map))
+    lazyllm.globals['active_tool_names'] |= {
+        getattr(fn, '__name__', '') for fn in attachment_tools if callable(fn)
+    }
+    # Schedule tools are independent of plugin and subagent flags — always inject them
+    # as a lazy group so the LLM only sees the gateway until the user mentions scheduling.
+    schedule_tools = _build_schedule_tools()
+    lazyllm.globals['active_tool_names'] |= {
+        'create_schedule', 'list_schedules', 'cancel_schedule',
+        'update_schedule', 'trigger_schedule',
+    }
+    all_tools = agent_tools + subagent_tools + attachment_tools + schedule_tools + plugin_tools + mcp_tools
     set_trace_context({
-        'enabled': bool(trace),
-        'trace_id': session_id if trace else None,
-        'session_id': session_id,
+        'enabled': bool(runtime.trace),
+        'trace_id': conversation.session_id if runtime.trace else None,
+        'session_id': conversation.session_id,
         'sampled': True,
         'module_trace': {'default': True},
         'request_tags': ['handle_chat'],
     })
     runtime_prompt = build_system_prompt(
         {cfg.name for cfg in active_configs},
-        environment_context=environment_context,
-        use_memory=use_memory,
-        user_preference=user_preference,
-        memory=memory,
+        environment_context=runtime.environment_context,
+        use_memory=personalization.use_memory,
+        user_preference=personalization.user_preference,
+        memory=personalization.memory,
         files=display_files,
     )
     if plugin_system_prompt:
@@ -326,7 +544,7 @@ async def handle_chat(query: str, history: Optional[List[Dict[str, Any]]],
         tools=all_tools,
         force_summarize_context=query,
         prompt=runtime_prompt,
-        skills=available_skills,
+        skills=agent.available_skills,
         workspace=_cfg['agentic_workspace'],
         keep_full_turns=_cfg['agentic_keep_full_turns'],
         fs=FS,
@@ -342,17 +560,28 @@ async def handle_chat(query: str, history: Optional[List[Dict[str, Any]]],
             async with rag_sem:
                 async for kind, payload in drive_agent(react_agent, agent_query, history=agent_history):
                     if kind == 'event':
+                        event_tag = payload.get('tag', '') if isinstance(payload, dict) else ''
+                        if event_tag in ('tool_calls', 'tool_results'):
+                            LOG.info(
+                                f'[ChatServer] [DBG_AGENT_EVENT] [sid={conversation.session_id}] '
+                                f'[tag={event_tag}] [payload={payload}]'
+                            )
                         for frame in translator.feed(payload):
                             cost = round(time.time() - start_time, 3)
-                            yield log_and_emit_frame(frame, cost, query, session_id, tag='FEED')
+                            yield log_and_emit_frame(frame, cost, query, conversation.session_id, tag='FEED')
                     else:
                         # 'final' -- payload is already the resolved result value;
                         # if future.result() raised, drive_agent propagated it before yielding.
+                        LOG.info(
+                            f'[ChatServer] [DBG_AGENT_FINAL] [sid={conversation.session_id}] '
+                            f'[tool_call_turns={translator.tool_call_turns}] '
+                            f'[result_type={type(payload).__name__}] [result={str(payload)[:200]}]'
+                        )
                         final_result = payload
 
             for frame in translator.finish(final_result):
                 cost = round(time.time() - start_time, 3)
-                yield log_and_emit_frame(frame, cost, query, session_id, tag='FINISH')
+                yield log_and_emit_frame(frame, cost, query, conversation.session_id, tag='FINISH')
 
         except Exception as exc:
             LOG.exception('[ChatServer] agent failed')
@@ -369,14 +598,18 @@ async def handle_chat(query: str, history: Optional[List[Dict[str, Any]]],
                 {'status': 'FINISHED', 'tool_call_turns': translator.tool_call_turns},
                 0.0,
             )
+        finally:
+            # Unregister the active session so the cancel endpoint no longer targets it.
+            if _conv_id_key:
+                _active_sessions.pop(_conv_id_key, None)
 
         cost = round(time.time() - start_time, 3)
         final_resp['cost'] = cost
         yield sse_line(final_resp)
 
-        databases_str = json.dumps(databases, ensure_ascii=False) if databases else []
+        databases_str = json.dumps(retrieval.databases, ensure_ascii=False) if retrieval.databases else []
         LOG.info(
-            f'[ChatServer] [KB_CHAT_STREAM_FINISH] [query={query}] [session_id={session_id}] '
+            f'[ChatServer] [KB_CHAT_STREAM_FINISH] [query={query}] [session_id={conversation.session_id}] '
             f'[filters={filters}] [files={resolved_files}] '
             f'[databases={databases_str}] [cost={cost}] [response=None]'
         )
