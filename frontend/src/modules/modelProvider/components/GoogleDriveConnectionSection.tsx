@@ -34,6 +34,7 @@ export default function GoogleDriveConnectionSection() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [secretConfigured, setSecretConfigured] = useState(false);
+  const callbackUrl = `${window.location.origin}/oauth/googledrive/data-source/callback`;
 
   const refreshConnection = useCallback(async () => {
     setLoading(true);
@@ -227,11 +228,11 @@ export default function GoogleDriveConnectionSection() {
             />
           </Form.Item>
           <p className="google-drive-connection-hint">
-            {t("modelProvider.external.googleDriveConfigHint")}
+            {t("modelProvider.external.googleDriveConfigHint", { callbackUrl })}
           </p>
           <p className="google-drive-connection-guide">
             <a
-              href="/data-sources/docs/google-drive-setup?from=model-provider-tools"
+              href="/data-sources/docs/google-drive-setup?from=google-drive-provider"
               target="_blank"
               rel="noreferrer"
             >

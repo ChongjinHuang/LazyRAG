@@ -427,7 +427,7 @@ export function getCloudDataSourceCallbackUrl(provider: CloudDataSourceProvider)
 
 export function getDataSourceManagementUrl(provider: CloudDataSourceProvider = "feishu") {
   if (provider === "googledrive") {
-    return `${window.location.origin}${getBaseName()}/model-providers/tools`;
+    return `${window.location.origin}${getBaseName()}/data-sources/providers/google-drive`;
   }
   return `${window.location.origin}${getBaseName()}/data-sources/providers/${provider}`;
 }

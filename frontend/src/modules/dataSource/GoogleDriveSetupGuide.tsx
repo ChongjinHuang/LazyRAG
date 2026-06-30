@@ -14,7 +14,6 @@ const { Paragraph, Text } = Typography;
 const GOOGLE_CLOUD_CONSOLE_URL = "https://console.cloud.google.com/apis/dashboard";
 const GOOGLE_DRIVE_API_URL = "https://console.cloud.google.com/apis/library/drive.googleapis.com";
 const GOOGLE_CLOUD_CREDENTIALS_URL = "https://console.cloud.google.com/apis/credentials";
-const GOOGLE_DRIVE_REDIRECT_URI = "http://localhost:8090/oauth/googledrive/data-source/callback";
 
 type GuideStep = {
   title: string;
@@ -24,8 +23,9 @@ type GuideStep = {
   linkHref?: string;
 };
 
-function buildGuideSteps(t: TFunction): GuideStep[] {
+function buildGuideSteps(t: TFunction, origin: string): GuideStep[] {
   const stepKey = (key: string) => `admin.dataSourceGoogleDriveSetupGuide.steps.${key}`;
+  const redirectUri = `${origin}/oauth/googledrive/data-source/callback`;
   return [
     {
       title: t(stepKey("openConsoleTitle")),
@@ -63,9 +63,10 @@ function buildGuideSteps(t: TFunction): GuideStep[] {
       description: t(stepKey("redirectDesc")),
       details: [
         t("admin.dataSourceGoogleDriveSetupGuide.callbackUrl", {
-          uri: GOOGLE_DRIVE_REDIRECT_URI,
+          uri: redirectUri,
         }),
         t(stepKey("redirectOriginHint")),
+        t(stepKey("redirectHttpsHint")),
       ],
     },
     {
@@ -80,7 +81,10 @@ function buildGuideSteps(t: TFunction): GuideStep[] {
       title: t(stepKey("enterCredentialsTitle")),
       description: t(stepKey("enterCredentialsDesc")),
       details: [
-        t(stepKey("enterCredentialsPath")),
+        t(stepKey("enterCredentialsPath"), {
+          registerUrl: `${origin}/register`,
+          providerUrl: `${origin}/data-sources/providers/google-drive`,
+        }),
         t(stepKey("enterCredentialsSave")),
       ],
     },
@@ -101,7 +105,7 @@ export default function GoogleDriveSetupGuide() {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const stepRefs = useRef<Array<HTMLElement | null>>([]);
-  const orderedGuideSteps = buildGuideSteps(t);
+  const orderedGuideSteps = buildGuideSteps(t, window.location.origin);
 
   const scrollToStep = (index: number) => {
     const page = pageRef.current;
@@ -129,7 +133,7 @@ export default function GoogleDriveSetupGuide() {
             type="link"
             icon={<ArrowLeftOutlined />}
             className="feishu-setup-guide-back"
-            onClick={() => navigate("/model-providers/tools")}
+            onClick={() => navigate("/data-sources/providers/google-drive")}
           >
             {t("admin.dataSourceGoogleDriveSetupGuide.backTools")}
           </Button>

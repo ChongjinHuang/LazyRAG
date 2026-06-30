@@ -3918,7 +3918,7 @@ export default function DataSourceManagement() {
               <button
                 type="button"
                 className={`data-source-provider-card ${isGoogleDriveAuthValid ? "" : "locked"}`}
-                onClick={() => navigate("/model-providers/tools")}
+                onClick={() => navigate("/data-sources/providers/google-drive")}
               >
                 <span className="data-source-provider-logo data-source-icon-googledrive">
                   <GoogleOutlined />

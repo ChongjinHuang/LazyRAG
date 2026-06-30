@@ -12,7 +12,6 @@ import "./feishuSetupGuide.scss";
 const { Paragraph, Text } = Typography;
 
 const NOTION_DEVELOPERS_URL = "https://app.notion.com/developers/connections";
-const NOTION_REDIRECT_URI = "http://127.0.0.1:8090/oauth/notion/data-source/callback";
 
 type GuideStep = {
   title: string;
@@ -22,8 +21,9 @@ type GuideStep = {
   linkHref?: string;
 };
 
-function buildGuideSteps(t: TFunction): GuideStep[] {
+function buildGuideSteps(t: TFunction, origin: string): GuideStep[] {
   const stepKey = (key: string) => `admin.dataSourceNotionSetupGuide.steps.${key}`;
+  const redirectUri = `${origin}/oauth/notion/data-source/callback`;
   return [
     {
       title: t(stepKey("openDevelopersTitle")),
@@ -56,7 +56,7 @@ function buildGuideSteps(t: TFunction): GuideStep[] {
       description: t(stepKey("redirectDesc")),
       details: [
         t("admin.dataSourceNotionSetupGuide.callbackUrl", {
-          uri: NOTION_REDIRECT_URI,
+          uri: redirectUri,
         }),
         t(stepKey("redirectProductionHint")),
       ],
@@ -99,7 +99,7 @@ export default function NotionSetupGuide() {
   const stepRefs = useRef<Array<HTMLElement | null>>([]);
   const isFromCreateSource =
     new URLSearchParams(location.search).get("from") === "create-source";
-  const orderedGuideSteps = buildGuideSteps(t);
+  const orderedGuideSteps = buildGuideSteps(t, window.location.origin);
 
   const scrollToStep = (index: number) => {
     const page = pageRef.current;

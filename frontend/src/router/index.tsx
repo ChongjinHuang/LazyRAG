@@ -23,6 +23,7 @@ import DataSourceFeishuCallback from "@/modules/dataSource/common/feishuCallback
 import FeishuAccountPage from "@/modules/dataSource/feishuAccounts";
 import FeishuSetupGuide from "@/modules/dataSource/FeishuSetupGuide";
 import GoogleDriveSetupGuide from "@/modules/dataSource/GoogleDriveSetupGuide";
+import GoogleDriveConnectionPage from "@/modules/dataSource/GoogleDriveConnectionPage";
 import NotionSetupGuide from "@/modules/dataSource/NotionSetupGuide";
 import DatasetListPage from "@/modules/datasetManagement/pages/list";
 import DatasetDetailPage from "@/modules/datasetManagement/pages/detail";
@@ -94,6 +95,7 @@ export default function AppRouter() {
           <Route path="data-sources/docs/notion-setup" element={<NotionSetupGuide />} />
           <Route path="data-sources/providers/feishu" element={<FeishuAccountPage />} />
           <Route path="data-sources/providers/notion" element={<DataSourceManagement />} />
+          <Route path="data-sources/providers/google-drive" element={<GoogleDriveConnectionPage />} />
           <Route path="data-sources/providers/sciverse" element={<Navigate to="/model-providers/tools" replace />} />
           <Route path="data-sources/:id" element={<DataSourceDetail />} />
           <Route path="dataset-management" element={<DatasetListPage />} />

@@ -307,7 +307,7 @@ const zhCN = {
       googleDriveDisconnect: "断开连接",
       googleDriveConfigTitle: "配置 Google Drive OAuth",
       googleDriveAuthorize: "保存并授权",
-      googleDriveConfigHint: "在 Google Cloud Console 启用 Drive API，并将当前回调地址加入 OAuth Web 客户端的授权重定向 URI。",
+      googleDriveConfigHint: "在 Google Cloud Console 启用 Drive API，并将以下地址完整加入 OAuth Web 客户端的授权重定向 URI：{{callbackUrl}}",
       googleDriveSetupGuideAction: "接入教程",
       googleDriveClientIdRequired: "请输入 OAuth Client ID",
       googleDriveClientSecretRequired: "请输入 OAuth Client Secret",
@@ -1342,10 +1342,17 @@ const zhCN = {
     dataSourceTypeNotionDesc: "连接 Notion 页面或数据库，按授权范围同步并供 Chat 读取。",
     dataSourceTypeGoogleDrive: "Google Drive",
     dataSourceGoogleDriveSetupHint:
-      "在工具配置中授权 Google Drive，用于 Chat 在线搜索，不会导入知识库。",
+      "授权 Google Drive 账号，用于 Chat 在线搜索，不会导入知识库。",
     dataSourceGoogleDriveConnected: "已连接 {{account}}，用于 Chat 在线搜索。",
     dataSourceGoogleDriveAccountFallback: "Google Drive 账号",
-    dataSourceTypeStepIntro: "当前支持本地文件 / 本地目录、飞书和 Notion 数据源接入，请选择后进入连接配置。",
+    dataSourceGoogleDriveBackProviders: "返回数据源供应商",
+    dataSourceGoogleDrivePageTitle: "Google Drive 账号授权",
+    dataSourceGoogleDrivePageDesc:
+      "管理 Google Drive OAuth 凭据与账号连接，供 Chat 直接搜索线上原始文档。",
+    dataSourceGoogleDriveCallbackLabel: "当前 OAuth 回调地址",
+    dataSourceGoogleDriveHttpsHint:
+      "请将上方地址完整登记到 Google OAuth Web 客户端。生产部署使用 HTTPS；本地 localhost 或 127.0.0.1 可按 Google 本地开发规则使用 HTTP。",
+    dataSourceTypeStepIntro: "当前支持本地文件 / 本地目录、飞书、Notion 和 Google Drive 数据源接入，请选择后进入连接配置。",
     dataSourceAdminOnly: "管理员",
     dataSourceFeishuLockHint: "需先设置 App ID / App Secret，设置后才能选择飞书数据源",
     dataSourceFeishuAuthReadyHint: "凭据已设置但尚未授权成功，点击可修改 App ID / App Secret 后重新授权。",
@@ -1517,8 +1524,8 @@ const zhCN = {
       },
     },
     dataSourceGoogleDriveSetupGuide: {
-      backTools: "返回工具配置",
-      title: "工具配置-Google Drive 在线文档",
+      backTools: "返回 Google Drive 授权",
+      title: "数据源供应商-Google Drive 在线文档",
       subtitle:
         "在 Google Cloud Console 创建 Google OAuth Web 客户端，然后在 LazyMind 中连接 Google Drive 账号，用于线上原始文档的搜索和读取。",
       summaryAria: "Google Drive 接入流程概览",
@@ -1540,7 +1547,7 @@ const zhCN = {
         consentUserType:
           "个人 Google 账号请选择 External；如果是 Google Workspace 且只允许组织内成员使用，可以选择 Internal。",
         consentTestUsers:
-          "如果应用还处于 Testing 状态，需要把即将授权的 Google 账号加入 Test users。",
+          "如果应用处于 Testing 状态，必须把当前授权账号加入 Audience 的 Test users；否则 Google 会返回 access_denied（开发者尚未授予访问权限）。",
         consentScopes:
           "添加 Drive 只读权限范围：https://www.googleapis.com/auth/drive.readonly。",
         credentialsTitle: "创建 OAuth Client ID",
@@ -1555,6 +1562,8 @@ const zhCN = {
           "在 Authorized redirect URIs 中添加 LazyMind 前端实际使用的 OAuth 回调地址，必须和浏览器打开的系统地址一致。",
         redirectOriginHint:
           "如果你用 127.0.0.1 或部署域名打开 LazyMind，而不是 localhost，请把回调地址中的 origin 替换成同一个浏览器 origin。",
+        redirectHttpsHint:
+          "生产域名应使用 HTTPS；本地开发可使用 Google Web OAuth 客户端中精确登记的 http://localhost 或 http://127.0.0.1 地址。协议、主机、端口和路径必须完全一致。",
         copyCredentialsTitle: "复制 Client ID 和 Client Secret",
         copyCredentialsDesc:
           "Web 客户端创建完成后，复制 OAuth Client ID 和 Client Secret。Client Secret 需要保密。",
@@ -1564,9 +1573,9 @@ const zhCN = {
           "Client Secret 对应 LazyMind 弹窗中的 OAuth Client Secret 字段。",
         enterCredentialsTitle: "注册或登录 LazyMind 并填写凭据",
         enterCredentialsDesc:
-          "打开 LazyMind；如果需要新账号，先注册，然后进入工具配置页面连接 Google Drive。",
+          "打开 LazyMind；如果需要新账号，先注册，然后进入数据源供应商中的 Google Drive 授权页。",
         enterCredentialsPath:
-          "本地 Docker 地址：先访问 http://localhost:8090/register 注册，再访问 http://localhost:8090/model-providers/tools 配置 Google Drive。",
+          "注册地址：{{registerUrl}}；Google Drive 授权页：{{providerUrl}}。",
         enterCredentialsSave:
           "打开 Google Drive 在线文档，点击连接 Google Drive，粘贴 Client ID 和 Client Secret，然后点击保存并授权。",
         finishTitle: "完成授权并在聊天中使用 Google Drive",
@@ -1612,7 +1621,7 @@ const zhCN = {
         redirectDesc:
           "在 Integration 设置的「Redirect URIs」区域，添加 LazyMind 的 OAuth 回调地址。这个地址必须是系统实际使用的回调 URL，否则授权完成后会报错。",
         redirectProductionHint:
-          "如果是生产环境部署，请将 127.0.0.1 替换为实际的域名或 IP 地址。",
+          "生产环境请使用当前部署域名的 HTTPS 回调地址；本地开发使用页面上显示的 localhost 或 127.0.0.1 地址。Redirect URI 必须与当前浏览器 origin 及系统实际回调完全一致。",
         capabilitiesTitle: "配置 Integration 权限 (Capabilities)",
         capabilitiesDesc:
           "在 Integration 设置中，根据需要勾选以下能力：Read content（读取页面/数据库内容）、Read comments（读取评论）等。LazyMind 至少需要 Read content 权限才能读取 Notion 内容。",

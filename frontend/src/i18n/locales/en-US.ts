@@ -331,7 +331,7 @@ const enUS = {
       googleDriveDisconnect: "Disconnect",
       googleDriveConfigTitle: "Configure Google Drive OAuth",
       googleDriveAuthorize: "Save and Authorize",
-      googleDriveConfigHint: "Enable the Drive API in Google Cloud Console and add the current callback URL to the OAuth Web client's authorized redirect URIs.",
+      googleDriveConfigHint: "Enable the Drive API in Google Cloud Console and add this exact address to the OAuth Web client's authorized redirect URIs: {{callbackUrl}}",
       googleDriveSetupGuideAction: "Setup Guide",
       googleDriveClientIdRequired: "Enter the OAuth Client ID",
       googleDriveClientSecretRequired: "Enter the OAuth Client Secret",
@@ -1386,11 +1386,18 @@ const enUS = {
       "Connect Notion pages or databases, sync by authorization scope and serve chat.",
     dataSourceTypeGoogleDrive: "Google Drive",
     dataSourceGoogleDriveSetupHint:
-      "Authorize Google Drive in Tool Configuration for online chat search. Files are not imported into a knowledge base.",
+      "Authorize a Google Drive account for online chat search. Files are not imported into a knowledge base.",
     dataSourceGoogleDriveConnected: "Connected {{account}}. Used for online chat search.",
     dataSourceGoogleDriveAccountFallback: "Google Drive account",
+    dataSourceGoogleDriveBackProviders: "Back to Data Source Providers",
+    dataSourceGoogleDrivePageTitle: "Google Drive Account Authorization",
+    dataSourceGoogleDrivePageDesc:
+      "Manage Google Drive OAuth credentials and account connections for direct online document search in Chat.",
+    dataSourceGoogleDriveCallbackLabel: "Current OAuth callback URL",
+    dataSourceGoogleDriveHttpsHint:
+      "Register the exact URL above in the Google OAuth Web client. Use HTTPS in production; localhost or 127.0.0.1 may use HTTP under Google's local development rules.",
     dataSourceTypeStepIntro:
-      "Currently supports local files / directories, Feishu, and Notion data source access. Select one to continue.",
+      "Currently supports local files / directories, Feishu, Notion, and Google Drive data source access. Select one to continue.",
     dataSourceAdminOnly: "Admin",
     dataSourceFeishuLockHint:
       "Set App ID / App Secret first before selecting Feishu as a data source",
@@ -1572,8 +1579,8 @@ const enUS = {
       },
     },
     dataSourceGoogleDriveSetupGuide: {
-      backTools: "Back to Tool Configuration",
-      title: "Tool Configuration - Google Drive Online Documents",
+      backTools: "Back to Google Drive Authorization",
+      title: "Data Source Provider - Google Drive Online Documents",
       subtitle:
         "Create a Google OAuth Web client in Google Cloud Console, then connect your Google Drive account in LazyMind for online search and reading.",
       summaryAria: "Google Drive setup process overview",
@@ -1595,7 +1602,7 @@ const enUS = {
         consentUserType:
           "Choose External for personal Google accounts, or Internal if your Google Workspace organization restricts the app to members.",
         consentTestUsers:
-          "If the app is in Testing status, add the Google account you will authorize as a test user.",
+          "If the app is in Testing status, add the current authorization account under Audience > Test users. Otherwise Google returns access_denied because the developer has not granted access.",
         consentScopes:
           "Add the Drive readonly scope: https://www.googleapis.com/auth/drive.readonly.",
         credentialsTitle: "Create an OAuth Client ID",
@@ -1610,6 +1617,8 @@ const enUS = {
           "In Authorized redirect URIs, add the exact callback URL used by the frontend address you open in the browser.",
         redirectOriginHint:
           "If you open LazyMind with 127.0.0.1 or a deployment domain instead of localhost, replace the origin in the callback URL with that same browser origin.",
+        redirectHttpsHint:
+          "Use HTTPS for production domains. Local development may use an exactly registered http://localhost or http://127.0.0.1 URL in a Google Web OAuth client. Scheme, host, port, and path must all match.",
         copyCredentialsTitle: "Copy Client ID and Client Secret",
         copyCredentialsDesc:
           "After the Web client is created, copy the OAuth Client ID and Client Secret. Keep the secret private.",
@@ -1619,9 +1628,9 @@ const enUS = {
           "Client Secret maps to the OAuth Client Secret field in LazyMind.",
         enterCredentialsTitle: "Register or sign in to LazyMind and enter credentials",
         enterCredentialsDesc:
-          "Open LazyMind, register a new account if needed, then go to Tool Configuration to connect Google Drive.",
+          "Open LazyMind, register a new account if needed, then open Google Drive Authorization under Data Source Providers.",
         enterCredentialsPath:
-          "Local Docker path: http://localhost:8090/register for registration, then http://localhost:8090/model-providers/tools for Google Drive.",
+          "Registration: {{registerUrl}}; Google Drive authorization: {{providerUrl}}.",
         enterCredentialsSave:
           "Open Google Drive Online Documents, click Connect Google Drive, paste Client ID and Client Secret, then click Save and Authorize.",
         finishTitle: "Authorize and use Google Drive in chat",
@@ -1668,7 +1677,7 @@ const enUS = {
         redirectDesc:
           "In the Redirect URIs section of integration settings, add LazyMind's OAuth callback URL. It must match the callback URL used by the system, otherwise authorization fails after redirect.",
         redirectProductionHint:
-          "For production deployments, replace 127.0.0.1 with the actual domain or IP address.",
+          "Use the current deployment domain over HTTPS in production. For local development, use the localhost or 127.0.0.1 URL shown on this page. The Redirect URI must exactly match the browser origin and the callback used by the system.",
         capabilitiesTitle: "Configure Integration Capabilities",
         capabilitiesDesc:
           "In integration settings, select the required capabilities such as Read content and Read comments. LazyMind needs at least Read content to read Notion content.",
