@@ -4,6 +4,7 @@ import { ArrowRightOutlined, FolderOpenOutlined, GoogleOutlined } from "@ant-des
 import { useNavigate } from "react-router-dom";
 import { dataSourceCloudOauthApi } from "../../api/clients";
 import { getSourceTypeTitle } from "../../utils/status";
+import { formatValidFeishuAccountNames } from "../../utils/feishuAccount";
 import { providerAuthOptions } from "../../constants/sourceTypeOptions";
 import { getCloudConnectionItems, mapCloudConnectionToDataSourceConnection } from "../../mappers/dataSourceConnection";
 import type { DataSourceManagementVm } from "../../hooks/useDataSourceManagement";
@@ -26,7 +27,7 @@ export default function DataSourceProviderPanel({ vm }: { vm: DataSourceManageme
     isNotionAuthValid,
     isFeishuSetupReady,
     isNotionSetupReady,
-    oauthConnection,
+    validFeishuAccounts,
     notionOauthConnection,
     handleManageFeishuAuth,
     openSourceCreateWizard,
@@ -182,8 +183,8 @@ export default function DataSourceProviderPanel({ vm }: { vm: DataSourceManageme
                     ? isFeishu
                       ? t("admin.dataSourceFeishuAuthConnectedHint", {
                           account:
-                            oauthConnection?.provider === "feishu"
-                              ? oauthConnection.accountName
+                            validFeishuAccounts.length > 0
+                              ? formatValidFeishuAccountNames(validFeishuAccounts)
                               : t("admin.dataSourceFeishuConnectedAccountFallback"),
                         })
                       : t("admin.dataSourceNotionConnected", {

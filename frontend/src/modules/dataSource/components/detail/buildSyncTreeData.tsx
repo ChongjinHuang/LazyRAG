@@ -1,23 +1,27 @@
+import type { DataNode } from "antd/es/tree";
 import type { TFunction } from "i18next";
 import type { ScanV2TreeNode } from "../../utils/scanAccessors";
+import { getFileUpdateMeta } from "../../utils/status";
 import {
   getScanTreeNodeKey,
   getTreeNodeUpdateState,
   isSelectableScanTreeDocument,
   type SyncTreeDataNode,
 } from "../../utils/scanTree";
-import { getFileUpdateMeta } from "../../utils/status";
 
-export function buildSyncTreeData(
+function toSyncTreeDataNodes(
   nodes: ScanV2TreeNode[],
   t: TFunction,
 ): SyncTreeDataNode[] {
   return nodes.map((node) => {
-    const children = node.children ? buildSyncTreeData(node.children, t) : undefined;
+    const children = node.children
+      ? toSyncTreeDataNodes(node.children, t)
+      : undefined;
     const updateState = getTreeNodeUpdateState(node);
     const updateMeta = getFileUpdateMeta(updateState, t);
     const updateText =
-      `${node.update_desc || node.source_state || ""}`.trim() || updateMeta.text;
+      `${node.update_desc || node.source_state || ""}`.trim() ||
+      updateMeta.text;
     const hasUpdateStatus =
       typeof node.has_update === "boolean" ||
       Boolean(node.update_type || node.update_desc || node.source_state);
@@ -49,4 +53,11 @@ export function buildSyncTreeData(
       children,
     };
   });
+}
+
+export function buildSyncTreeData(
+  syncTreeNodes: ScanV2TreeNode[],
+  t: TFunction,
+): DataNode[] {
+  return toSyncTreeDataNodes(syncTreeNodes, t);
 }
