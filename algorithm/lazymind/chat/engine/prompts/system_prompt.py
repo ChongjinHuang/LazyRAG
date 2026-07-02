@@ -10,6 +10,14 @@ from .guidance import (
 
 _KNOWLEDGE_EVIDENCE_GROUPS = {'kb', 'temp_kb'}
 
+_ONLINE_SEARCH_GUIDANCE = """## Online Source Search
+When the user asks to search the original online Feishu Wiki or Notion workspace, use the
+`online_search` tool group instead of the local knowledge-base tools. Use `search_online`
+for one or more content keywords and `find_online` only for filename/title regular-expression
+matching. Pass `sources=['feishu']` or `sources=['notion']` when the user specifies a provider.
+If the user specifies a Feishu space, Notion database/data source, or filename scope, pass the
+corresponding scope argument. Base the final answer on the returned online results."""
+
 
 def _build_environment_context_prompt(environment_context: dict | None = None) -> str:
     time_now = None
@@ -75,6 +83,8 @@ def build_system_prompt(
         prompt_parts.append(TOOL_CALL_STATUS_GUIDANCE)
     if active_groups & _KNOWLEDGE_EVIDENCE_GROUPS:
         prompt_parts.append(KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE)
+    if 'online_search' in active_groups:
+        prompt_parts.append(_ONLINE_SEARCH_GUIDANCE)
     if (
         files
         or 'image_generator' in active_groups
