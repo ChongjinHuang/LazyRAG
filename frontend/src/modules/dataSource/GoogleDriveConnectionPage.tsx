@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 
 import GoogleDriveConnectionSection from "@/modules/modelProvider/components/GoogleDriveConnectionSection";
+import { getCloudDataSourceCallbackUrl } from "@/modules/dataSource/oauth/urls";
 import "@/modules/modelProvider/index.scss";
 import "./googleDriveConnectionPage.scss";
 
@@ -12,7 +13,7 @@ const { Paragraph, Text } = Typography;
 export default function GoogleDriveConnectionPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const callbackUrl = `${window.location.origin}/oauth/googledrive/data-source/callback`;
+  const callbackUrl = getCloudDataSourceCallbackUrl("googledrive");
 
   return (
     <div className="google-drive-provider-page">

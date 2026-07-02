@@ -1,4 +1,3 @@
-import { BASE_URL } from "@/components/request";
 import { loadPendingCloudOAuthSession } from "./storage";
 import type { CloudDataSourceProvider } from "./types";
 
@@ -6,14 +5,10 @@ function getBaseName() {
   return ((window as Window & { BASENAME?: string }).BASENAME || "").trim();
 }
 
-function getApiOrigin() {
-  return new URL(BASE_URL || window.location.origin, window.location.origin).origin;
-}
-
-function buildAppUrlFromApiOrigin(path: string) {
+export function getAppUrl(path: string) {
   const baseName = getBaseName().replace(/\/$/, "");
   const normalizedPath = path.startsWith("/") ? path : `/${path}`;
-  return `${getApiOrigin()}${baseName}${normalizedPath}`;
+  return `${window.location.origin}${baseName}${normalizedPath}`;
 }
 
 export function normalizeSameOriginReturnUrl(value?: string) {
@@ -40,14 +35,14 @@ export function normalizeSameOriginReturnUrl(value?: string) {
 }
 
 export function getFeishuDataSourceCallbackUrl() {
-  return buildAppUrlFromApiOrigin("/oauth/feishu/callback");
+  return getAppUrl("/oauth/feishu/callback");
 }
 
 export function getCloudDataSourceCallbackUrl(provider: CloudDataSourceProvider) {
   if (provider === "feishu") {
     return getFeishuDataSourceCallbackUrl();
   }
-  return buildAppUrlFromApiOrigin(`/oauth/${provider}/data-source/callback`);
+  return getAppUrl(`/oauth/${provider}/data-source/callback`);
 }
 
 export function getDataSourceManagementUrl(provider: CloudDataSourceProvider = "feishu") {

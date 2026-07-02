@@ -7,6 +7,7 @@ import {
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
+import { getCloudDataSourceCallbackUrl } from "./oauth/urls";
 import "./feishuSetupGuide.scss";
 
 const { Paragraph, Text } = Typography;
@@ -21,9 +22,8 @@ type GuideStep = {
   linkHref?: string;
 };
 
-function buildGuideSteps(t: TFunction, origin: string): GuideStep[] {
+function buildGuideSteps(t: TFunction, redirectUri: string): GuideStep[] {
   const stepKey = (key: string) => `admin.dataSourceNotionSetupGuide.steps.${key}`;
-  const redirectUri = `${origin}/oauth/notion/data-source/callback`;
   return [
     {
       title: t(stepKey("openDevelopersTitle")),
@@ -99,7 +99,10 @@ export default function NotionSetupGuide() {
   const stepRefs = useRef<Array<HTMLElement | null>>([]);
   const isFromCreateSource =
     new URLSearchParams(location.search).get("from") === "create-source";
-  const orderedGuideSteps = buildGuideSteps(t, window.location.origin);
+  const orderedGuideSteps = buildGuideSteps(
+    t,
+    getCloudDataSourceCallbackUrl("notion"),
+  );
 
   const scrollToStep = (index: number) => {
     const page = pageRef.current;

@@ -5,6 +5,7 @@ import { useTranslation } from "react-i18next";
 
 import { dataSourceCloudOauthApi } from "@/modules/dataSource/api/clients";
 import { unwrapApiData } from "@/modules/dataSource/api/unwrap";
+import { getCloudDataSourceCallbackUrl } from "@/modules/dataSource/oauth/urls";
 import {
   CLOUD_DATA_SOURCE_OAUTH_CHANNEL,
   consumeCloudDataSourceOAuthResult,
@@ -35,7 +36,7 @@ export default function GoogleDriveConnectionSection() {
   const [modalOpen, setModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [secretConfigured, setSecretConfigured] = useState(false);
-  const callbackUrl = `${window.location.origin}/oauth/googledrive/data-source/callback`;
+  const callbackUrl = getCloudDataSourceCallbackUrl("googledrive");
 
   const refreshConnection = useCallback(async () => {
     setLoading(true);

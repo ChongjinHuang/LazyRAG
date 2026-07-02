@@ -7,6 +7,11 @@ import {
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import {
+  getAppUrl,
+  getCloudDataSourceCallbackUrl,
+  getDataSourceManagementUrl,
+} from "./oauth/urls";
 import "./feishuSetupGuide.scss";
 
 const { Paragraph, Text } = Typography;
@@ -23,9 +28,9 @@ type GuideStep = {
   linkHref?: string;
 };
 
-function buildGuideSteps(t: TFunction, origin: string): GuideStep[] {
+function buildGuideSteps(t: TFunction): GuideStep[] {
   const stepKey = (key: string) => `admin.dataSourceGoogleDriveSetupGuide.steps.${key}`;
-  const redirectUri = `${origin}/oauth/googledrive/data-source/callback`;
+  const redirectUri = getCloudDataSourceCallbackUrl("googledrive");
   return [
     {
       title: t(stepKey("openConsoleTitle")),
@@ -82,8 +87,8 @@ function buildGuideSteps(t: TFunction, origin: string): GuideStep[] {
       description: t(stepKey("enterCredentialsDesc")),
       details: [
         t(stepKey("enterCredentialsPath"), {
-          registerUrl: `${origin}/register`,
-          providerUrl: `${origin}/data-sources/providers/google-drive`,
+          registerUrl: getAppUrl("/register"),
+          providerUrl: getDataSourceManagementUrl("googledrive"),
         }),
         t(stepKey("enterCredentialsSave")),
       ],
@@ -105,7 +110,7 @@ export default function GoogleDriveSetupGuide() {
   const pageRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
   const stepRefs = useRef<Array<HTMLElement | null>>([]);
-  const orderedGuideSteps = buildGuideSteps(t, window.location.origin);
+  const orderedGuideSteps = buildGuideSteps(t);
 
   const scrollToStep = (index: number) => {
     const page = pageRef.current;
