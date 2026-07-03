@@ -1781,7 +1781,7 @@ const enUS = {
     },
     dataSourceGoogleDriveSetupGuide: {
       backTools: "Back to Google Drive Authorization",
-      title: "Data Source Provider - Google Drive Online Documents",
+      title: "Cloud Document Provider - Google Drive Online Documents",
       subtitle:
         "Create a Google OAuth Web client in Google Cloud Console, then connect your Google Drive account in LazyMind for online search and reading.",
       summaryAria: "Google Drive setup process overview",
@@ -1789,6 +1789,7 @@ const enUS = {
       openConsole: "Open Google Cloud Console",
       openDriveApi: "Open Google Drive API",
       openCredentials: "Open Credentials",
+      openAudience: "Open Google Auth Platform Audience",
       callbackUrl: "Authorized redirect URI: {{uri}}",
       steps: {
         openConsoleTitle: "Create or select a Google Cloud project",
@@ -1799,11 +1800,13 @@ const enUS = {
           "In APIs and services, enable Google Drive API for the selected project. LazyMind calls the official Google Drive API for search, find, and read operations.",
         consentTitle: "Configure OAuth consent screen",
         consentDesc:
-          "Open OAuth consent screen and complete the required app information before creating credentials.",
+          "Open Audience in Google Auth Platform, verify that the selected project owns the OAuth client, then configure the app audience and test users.",
         consentUserType:
           "Choose External for personal Google accounts, or Internal if your Google Workspace organization restricts the app to members.",
         consentTestUsers:
-          "If the app is in Testing status, add the current authorization account under Audience > Test users. Otherwise Google returns access_denied because the developer has not granted access.",
+          "If the app is in Testing status, click Add users under Test users, add the email that will sign in to Google Drive, save, and wait about one minute before authorizing again.",
+        consentRetry:
+          "After access_denied, do not refresh the Google error page. Return to Cloud Documents in LazyMind and click Connect Google Drive again to create a new OAuth request.",
         consentScopes:
           "Add the Drive readonly scope: https://www.googleapis.com/auth/drive.readonly.",
         credentialsTitle: "Create an OAuth Client ID",
@@ -1829,7 +1832,7 @@ const enUS = {
           "Client Secret maps to the OAuth Client Secret field in LazyMind.",
         enterCredentialsTitle: "Register or sign in to LazyMind and enter credentials",
         enterCredentialsDesc:
-          "Open LazyMind, register a new account if needed, then open Google Drive Authorization under Data Source Providers.",
+          "Open LazyMind, register a new account if needed, then open Google Drive Authorization under Model Providers > Cloud Documents.",
         enterCredentialsPath:
           "Registration: {{registerUrl}}; Google Drive authorization: {{providerUrl}}.",
         enterCredentialsSave:

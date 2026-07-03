@@ -1735,7 +1735,7 @@ const zhCN = {
     },
     dataSourceGoogleDriveSetupGuide: {
       backTools: "返回 Google Drive 授权",
-      title: "数据源供应商-Google Drive 在线文档",
+      title: "云文档供应商 - Google Drive 在线文档",
       subtitle:
         "在 Google Cloud Console 创建 Google OAuth Web 客户端，然后在 LazyMind 中连接 Google Drive 账号，用于线上原始文档的搜索和读取。",
       summaryAria: "Google Drive 接入流程概览",
@@ -1743,6 +1743,7 @@ const zhCN = {
       openConsole: "打开 Google Cloud Console",
       openDriveApi: "打开 Google Drive API",
       openCredentials: "打开凭据页面",
+      openAudience: "打开 Google Auth Platform Audience",
       callbackUrl: "授权重定向 URI：{{uri}}",
       steps: {
         openConsoleTitle: "创建或选择 Google Cloud 项目",
@@ -1753,11 +1754,13 @@ const zhCN = {
           "在 API 和服务中，为当前项目启用 Google Drive API。LazyMind 会调用 Google Drive 官方 API 完成 search、find 和 read。",
         consentTitle: "配置 OAuth 同意屏幕",
         consentDesc:
-          "进入 OAuth consent screen，先完成应用名称、联系人等必要信息，再继续创建凭据。",
+          "进入 Google Auth Platform 的 Audience，确认当前项目和 OAuth 客户端所属项目一致，再配置应用受众和测试用户。",
         consentUserType:
           "个人 Google 账号请选择 External；如果是 Google Workspace 且只允许组织内成员使用，可以选择 Internal。",
         consentTestUsers:
-          "如果应用处于 Testing 状态，必须把当前授权账号加入 Audience 的 Test users；否则 Google 会返回 access_denied（开发者尚未授予访问权限）。",
+          "如果应用处于 Testing 状态，在 Test users 中点击 Add users，添加实际登录 Google Drive 的邮箱并保存；等待约一分钟后再授权，否则 Google 会返回 access_denied。",
+        consentRetry:
+          "出现 access_denied 后不要刷新 Google 错误页；返回 LazyMind 的云文档页面，重新点击“连接 Google Drive”，生成新的 OAuth 请求。",
         consentScopes:
           "添加 Drive 只读权限范围：https://www.googleapis.com/auth/drive.readonly。",
         credentialsTitle: "创建 OAuth Client ID",
@@ -1783,7 +1786,7 @@ const zhCN = {
           "Client Secret 对应 LazyMind 弹窗中的 OAuth Client Secret 字段。",
         enterCredentialsTitle: "注册或登录 LazyMind 并填写凭据",
         enterCredentialsDesc:
-          "打开 LazyMind；如果需要新账号，先注册，然后进入数据源供应商中的 Google Drive 授权页。",
+          "打开 LazyMind；如果需要新账号，先注册，然后进入模型供应商的云文档页面并打开 Google Drive 授权页。",
         enterCredentialsPath:
           "注册地址：{{registerUrl}}；Google Drive 授权页：{{providerUrl}}。",
         enterCredentialsSave:

@@ -20,6 +20,7 @@ const { Paragraph, Text } = Typography;
 const GOOGLE_CLOUD_CONSOLE_URL = "https://console.cloud.google.com/apis/dashboard";
 const GOOGLE_DRIVE_API_URL = "https://console.cloud.google.com/apis/library/drive.googleapis.com";
 const GOOGLE_CLOUD_CREDENTIALS_URL = "https://console.cloud.google.com/apis/credentials";
+const GOOGLE_AUTH_AUDIENCE_URL = "https://console.cloud.google.com/auth/audience";
 
 type GuideStep = {
   title: string;
@@ -48,9 +49,12 @@ function buildGuideSteps(t: TFunction): GuideStep[] {
     {
       title: t(stepKey("consentTitle")),
       description: t(stepKey("consentDesc")),
+      linkLabel: t("admin.dataSourceGoogleDriveSetupGuide.openAudience"),
+      linkHref: GOOGLE_AUTH_AUDIENCE_URL,
       details: [
         t(stepKey("consentUserType")),
         t(stepKey("consentTestUsers")),
+        t(stepKey("consentRetry")),
         t(stepKey("consentScopes")),
       ],
     },
