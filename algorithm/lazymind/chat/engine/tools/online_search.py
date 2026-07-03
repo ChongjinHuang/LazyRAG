@@ -16,7 +16,7 @@ import lazyllm
 from lazyllm.tools.fs.supplier.feishu import FeishuWikiFS
 from lazyllm.tools.fs.supplier.notion import NotionFS
 
-from lazymind.chat.engine.tools.infra import handle_tool_errors, tool_success
+from lazymind.chat.engine.tools.infra import tool_success
 
 
 _DEFAULT_MAX_RESULTS = 10
@@ -99,7 +99,6 @@ class OnlineSearchToolGroup:
 
     __public_apis__ = ['search_online', 'find_online']
 
-    @handle_tool_errors
     def search_online(
         self,
         query: str,
@@ -192,7 +191,6 @@ class OnlineSearchToolGroup:
         _truncate_grouped_results(result, sources, max_results)
         return tool_success('search_online', result)
 
-    @handle_tool_errors
     def find_online(
         self,
         pattern: str,

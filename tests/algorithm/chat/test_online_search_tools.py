@@ -22,7 +22,6 @@ def _load_online_search_module():
     fake_notion.NotionFS = object
 
     fake_infra = types.ModuleType('lazymind.chat.engine.tools.infra')
-    fake_infra.handle_tool_errors = lambda func: func
     fake_infra.tool_success = lambda tool, result: {
         'success': True,
         'tool': tool,
