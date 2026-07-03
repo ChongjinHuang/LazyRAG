@@ -35,15 +35,21 @@ interface DataSourceOAuthCallbackProps {
   provider?: CloudDataSourceProvider;
 }
 
+const PROVIDER_NAME_KEYS: Record<CloudDataSourceProvider, string> = {
+  feishu: "admin.dataSourceTypeFeishu",
+  notion: "admin.dataSourceTypeNotion",
+};
+
 export default function FeishuDataSourceCallback({
   provider = "feishu",
 }: DataSourceOAuthCallbackProps) {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
+  const providerName = t(PROVIDER_NAME_KEYS[provider]);
   const [viewState, setViewState] = useState<CallbackViewState>({
     status: "loading",
-    title: t("admin.dataSourceCallbackLoadingTitle"),
-    subtitle: t("admin.dataSourceCallbackLoadingSubtitle"),
+    title: t("admin.dataSourceCallbackLoadingTitle", { providerName }),
+    subtitle: t("admin.dataSourceCallbackLoadingSubtitle", { providerName }),
   });
 
   useEffect(() => {
@@ -81,10 +87,10 @@ export default function FeishuDataSourceCallback({
       if (error) {
         const message =
           errorDescription ||
-          t("admin.dataSourceCallbackErrorWithCode", { code: error });
+          t("admin.dataSourceCallbackErrorWithCode", { code: error, providerName });
         setViewState({
           status: "error",
-          title: t("admin.dataSourceCallbackErrorTitle"),
+          title: t("admin.dataSourceCallbackErrorTitle", { providerName }),
           subtitle: message,
         });
         finalize({
@@ -101,7 +107,7 @@ export default function FeishuDataSourceCallback({
         const message = t("admin.dataSourceCallbackMissingParams");
         setViewState({
           status: "error",
-          title: t("admin.dataSourceCallbackErrorTitle"),
+          title: t("admin.dataSourceCallbackErrorTitle", { providerName }),
           subtitle: message,
         });
         finalize({
@@ -119,7 +125,7 @@ export default function FeishuDataSourceCallback({
         const connection = await finishCloudDataSourceOAuth(provider, code, state);
         setViewState({
           status: "success",
-          title: t("admin.dataSourceCallbackSuccessTitle"),
+          title: t("admin.dataSourceCallbackSuccessTitle", { providerName }),
           subtitle: t("admin.dataSourceCallbackSuccessSubtitle", {
             accountName: connection.accountName,
           }),
@@ -137,7 +143,7 @@ export default function FeishuDataSourceCallback({
         const message = error?.message || t("admin.dataSourceOauthFailedRetry");
         setViewState({
           status: "error",
-          title: t("admin.dataSourceCallbackErrorTitle"),
+          title: t("admin.dataSourceCallbackErrorTitle", { providerName }),
           subtitle: message,
         });
         finalize({
@@ -151,7 +157,7 @@ export default function FeishuDataSourceCallback({
     };
 
     void run();
-  }, [provider, searchParams, t]);
+  }, [provider, providerName, searchParams, t]);
 
   return (
     <div
