@@ -5,6 +5,7 @@ import { useNavigate } from "react-router-dom";
 
 import GoogleDriveConnectionSection from "@/modules/modelProvider/components/GoogleDriveConnectionSection";
 import { getCloudDataSourceCallbackUrl } from "@/modules/dataSource/oauth/urls";
+import { CLOUD_DOCUMENTS_PATH } from "@/modules/modelProvider/utils/cloudDocumentUrls";
 import "@/modules/modelProvider/index.scss";
 import "./googleDriveConnectionPage.scss";
 
@@ -21,7 +22,7 @@ export default function GoogleDriveConnectionPage() {
         <Button
           type="link"
           icon={<ArrowLeftOutlined />}
-          onClick={() => navigate("/data-sources")}
+          onClick={() => navigate(CLOUD_DOCUMENTS_PATH)}
         >
           {t("admin.dataSourceGoogleDriveBackProviders")}
         </Button>

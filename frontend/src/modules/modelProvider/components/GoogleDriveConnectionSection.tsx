@@ -14,6 +14,7 @@ import {
   requestCloudDataSourceAuthorizeUrl,
   type CloudDataSourceOAuthMessage,
 } from "@/modules/dataSource/common/feishuOAuth";
+import { CLOUD_DOCUMENTS_GOOGLE_DRIVE_SETUP_PATH } from "@/modules/modelProvider/utils/cloudDocumentUrls";
 
 
 interface GoogleDriveAppForm {
@@ -234,7 +235,7 @@ export default function GoogleDriveConnectionSection() {
           </p>
           <p className="google-drive-connection-guide">
             <a
-              href="/data-sources/docs/google-drive-setup?from=google-drive-provider"
+              href={`${CLOUD_DOCUMENTS_GOOGLE_DRIVE_SETUP_PATH}?from=google-drive-provider`}
               target="_blank"
               rel="noreferrer"
             >

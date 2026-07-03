@@ -11,7 +11,8 @@ import {
   getAppUrl,
   getCloudDataSourceCallbackUrl,
   getDataSourceManagementUrl,
-} from "./oauth/urls";
+} from "@/modules/dataSource/oauth/urls";
+import { CLOUD_DOCUMENTS_GOOGLE_DRIVE_PATH } from "@/modules/modelProvider/utils/cloudDocumentUrls";
 import "./feishuSetupGuide.scss";
 
 const { Paragraph, Text } = Typography;
@@ -138,7 +139,7 @@ export default function GoogleDriveSetupGuide() {
             type="link"
             icon={<ArrowLeftOutlined />}
             className="feishu-setup-guide-back"
-            onClick={() => navigate("/data-sources/providers/google-drive")}
+            onClick={() => navigate(CLOUD_DOCUMENTS_GOOGLE_DRIVE_PATH)}
           >
             {t("admin.dataSourceGoogleDriveSetupGuide.backTools")}
           </Button>

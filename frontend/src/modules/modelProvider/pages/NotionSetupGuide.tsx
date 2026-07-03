@@ -7,8 +7,9 @@ import {
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getCloudDataSourceCallbackUrl } from "./oauth/urls";
+import { getCloudDataSourceCallbackUrl } from "@/modules/dataSource/oauth/urls";
 import "./feishuSetupGuide.scss";
+import { CLOUD_DOCUMENTS_PATH } from "../utils/cloudDocumentUrls";
 
 const { Paragraph, Text } = Typography;
 
@@ -131,7 +132,7 @@ export default function NotionSetupGuide() {
             icon={<ArrowLeftOutlined />}
             className="feishu-setup-guide-back"
             onClick={() =>
-              navigate(isFromCreateSource ? "/data-sources" : "/data-sources/providers/notion")
+              navigate(isFromCreateSource ? "/data-sources" : CLOUD_DOCUMENTS_PATH)
             }
           >
             {isFromCreateSource

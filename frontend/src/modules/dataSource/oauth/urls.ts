@@ -1,5 +1,6 @@
 import { loadPendingCloudOAuthSession } from "./storage";
 import type { CloudDataSourceProvider } from "./types";
+import { getCloudDocumentsUrl } from "@/modules/modelProvider/utils/cloudDocumentUrls";
 
 function getBaseName() {
   return ((window as Window & { BASENAME?: string }).BASENAME || "").trim();
@@ -46,10 +47,7 @@ export function getCloudDataSourceCallbackUrl(provider: CloudDataSourceProvider)
 }
 
 export function getDataSourceManagementUrl(provider: CloudDataSourceProvider = "feishu") {
-  if (provider === "googledrive") {
-    return `${window.location.origin}${getBaseName()}/data-sources/providers/google-drive`;
-  }
-  return `${window.location.origin}${getBaseName()}/data-sources/providers/${provider}`;
+  return getCloudDocumentsUrl(provider);
 }
 
 export function getFeishuDataSourceOAuthReturnUrl(state?: string | null) {

@@ -77,6 +77,23 @@ def test_exchange_and_refresh_tokens(monkeypatch):
     assert calls[1]['grant_type'] == 'refresh_token'
 
 
+def test_refresh_uses_rotated_refresh_token_when_returned(monkeypatch):
+    monkeypatch.setattr(provider_module, '_post_form', lambda _payload: {
+        'access_token': 'access-2',
+        'expires_in': 3600,
+        'refresh_token': 'refresh-2',
+        'token_type': 'Bearer',
+    })
+
+    refreshed = GoogleDriveOAuthProvider().refresh_access_token(
+        client_id='client-id',
+        client_secret='client-secret',
+        refresh_token='refresh-1',
+    )
+
+    assert refreshed.refresh_token == 'refresh-2'
+
+
 def test_fetch_account_profile_uses_drive_about(monkeypatch):
     monkeypatch.setattr(
         provider_module,

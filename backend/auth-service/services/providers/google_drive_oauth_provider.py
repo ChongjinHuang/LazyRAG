@@ -132,7 +132,7 @@ class GoogleDriveOAuthProvider(CloudOAuthProvider):
         return CloudTokenPayload(
             access_token=(data.get('access_token') or '').strip(),
             expires_at=_safe_expires_at(int(data.get('expires_in') or 0)),
-            refresh_token=refresh_token,
+            refresh_token=(data.get('refresh_token') or '').strip() or refresh_token,
             token_type=(data.get('token_type') or 'Bearer').strip() or 'Bearer',
         )
 
