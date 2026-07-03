@@ -13,7 +13,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 import lazyllm
-from lazyllm.tools.fs.supplier.feishu import FeishuFS, FeishuWikiFS
+from lazyllm.tools.fs.supplier.feishu import FeishuWikiFS
 from lazyllm.tools.fs.supplier.notion import NotionFS
 
 from lazymind.chat.engine.tools.infra import handle_tool_errors, tool_success
@@ -25,7 +25,7 @@ _DEFAULT_FIND_MAX_RESULTS = 20
 
 def _get_feishu_fs() -> FeishuWikiFS:
     """Return a FeishuWikiFS instance with per-request dynamic auth."""
-    return FeishuFS(space_id='dynamic', dynamic_auth=True)
+    return FeishuWikiFS(dynamic_auth=True)
 
 
 def _get_notion_fs() -> NotionFS:

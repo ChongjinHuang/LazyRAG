@@ -12,8 +12,11 @@ def _load_online_search_module():
     )
 
     fake_feishu = types.ModuleType('lazyllm.tools.fs.supplier.feishu')
-    fake_feishu.FeishuFS = object
-    fake_feishu.FeishuWikiFS = object
+    class FakeFeishuWikiFS:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+
+    fake_feishu.FeishuWikiFS = FakeFeishuWikiFS
 
     fake_notion = types.ModuleType('lazyllm.tools.fs.supplier.notion')
     fake_notion.NotionFS = object
@@ -78,6 +81,15 @@ class _FakeNotionFS:
     def find(self, pattern, limit=50, scope=''):
         self.find_calls.append((pattern, limit, scope))
         return [{'title': 'Project Plan', 'notion_path': 'notion:/~page/page1'}]
+
+
+def test_get_feishu_fs_returns_wiki_filesystem():
+    online_search = _load_online_search_module()
+
+    fs = online_search._get_feishu_fs()
+
+    assert isinstance(fs, online_search.FeishuWikiFS)
+    assert fs.kwargs == {'dynamic_auth': True}
 
 
 def test_search_online_passes_source_specific_scopes(monkeypatch):
