@@ -33,6 +33,11 @@ KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE = (
 )
 CLOUD_DOCUMENT_GUIDANCE = (
     '# Cloud document rules\n'
+    'For Notion, use `ls` with `path="/"` when the user asks which pages or databases '
+    'are available. Use `search` only with a real, non-empty title keyword supplied or '
+    'implied by the user; never use `*` as a wildcard. An empty result does not mean '
+    'authentication failed, so report authentication problems only when the tool returns '
+    'an explicit authentication or permission error. '
     'When the user asks to search Google Drive or provides a Google Docs, Sheets, '
     'or Drive URL, use the Google Drive file-system tools. Use `search` for one or '
     'more content keywords and `find` only for file-name regular expressions. Read '
