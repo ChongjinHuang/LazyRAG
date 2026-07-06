@@ -335,6 +335,9 @@ export function createOAuthEngine(ctx: ManagementContext) {
         scopes: provider === "feishu" ? FEISHU_DEFAULT_SCOPES : [],
         returnUrl: window.location.href,
       });
+      const draftFormValues =
+        options?.draftFormValues ??
+        (options?.draftWizardOpen === false ? {} : form.getFieldsValue(true));
 
       const draft: FeishuDataSourceWizardDraft = {
         wizardOpen: options?.draftWizardOpen ?? true,
@@ -346,7 +349,7 @@ export function createOAuthEngine(ctx: ManagementContext) {
         oauthState: "waiting",
         connectionVerified: previousVerified,
         oauthConnection: previousConnection,
-        formValues: options?.draftFormValues || form.getFieldsValue(true),
+        formValues: draftFormValues,
       };
 
       saveFeishuDataSourceWizardDraft(draft);

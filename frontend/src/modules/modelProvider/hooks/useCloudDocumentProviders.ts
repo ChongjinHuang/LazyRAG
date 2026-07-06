@@ -209,7 +209,6 @@ export function useCloudDocumentProviders() {
       setOauthLoading(false);
     }
   };
-  useCloudDocumentProviders
   const openCloudSetupModal = (
     provider: CloudDataSourceProvider,
     intent: CloudSetupIntent = "auth",
