@@ -10,7 +10,9 @@ def _load_system_prompt_module():
     fake_guidance.DEFAULT_SYSTEM_PROMPT = 'default prompt'
     fake_guidance.IMAGE_REFERENCE_MARKDOWN_GUIDANCE = 'image guidance'
     fake_guidance.KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE = 'knowledge guidance'
+    fake_guidance.SEARCH_GUIDANCE = 'knowledge search guidance'
     fake_guidance.TOOL_CALL_STATUS_GUIDANCE = 'tool guidance'
+    fake_guidance.WEB_SEARCH_GUIDANCE = 'web search guidance'
     old_guidance = sys.modules.get(fake_guidance.__name__)
     sys.modules[fake_guidance.__name__] = fake_guidance
     try:
@@ -44,3 +46,12 @@ def test_online_search_guidance_is_not_added_for_other_groups():
     prompt = _load_system_prompt_module().build_system_prompt({'kb'}, use_memory=False)
 
     assert '`search_online`' not in prompt
+
+
+def test_online_and_web_search_guidance_can_be_enabled_together():
+    prompt = _load_system_prompt_module().build_system_prompt(
+        {'online_search', 'web_search'}, use_memory=False,
+    )
+
+    assert '`search_online`' in prompt
+    assert 'web search guidance' in prompt
