@@ -234,16 +234,17 @@ class PluginSpec:
         # Load plugin.yaml
         plugin_yaml_path = plugin_dir / 'plugin.yaml'
         with plugin_yaml_path.open('r', encoding='utf-8') as f:
-            self.yaml: Dict[str, Any] = yaml.safe_load(f) or {}
+            self.plugin_yaml_raw: str = f.read()
+        self.yaml: Dict[str, Any] = yaml.safe_load(self.plugin_yaml_raw) or {}
 
         # Load scenario files
         scenario_dir = plugin_dir / 'scenario'
         self.scenario_md: str = self._read_text(scenario_dir / 'scenario.md')
-        state_raw: Dict[str, Any] = {}
         state_path = scenario_dir / 'state.yml'
         with state_path.open('r', encoding='utf-8') as f:
-            state_raw = yaml.safe_load(f) or {}
-        self.state: Dict[str, Any] = state_raw
+            state_text = f.read()
+        self.state_yaml_raw: str = state_text
+        self.state: Dict[str, Any] = yaml.safe_load(state_text) or {}
         self.driver_md: Optional[str] = self._read_text(scenario_dir / 'driver.md', optional=True)
 
         # Build state machine
@@ -559,16 +560,24 @@ def get_plugin_yaml(plugin_id: str) -> Dict[str, Any]:
     return spec.yaml if spec else {}
 
 
-def find_producer_step(plugin_id: str, slot: str) -> Optional[str]:
-    """Return the step_id that produces slot, or None."""
+def find_producer_steps(plugin_id: str, slot: str) -> List[str]:
+    """Return all step_ids that can produce slot, preserving state.yml order."""
     spec = get_plugin(plugin_id)
     if not spec:
-        return None
+        return []
+    producers: List[str] = []
     for step_id, step_cfg in spec._steps.items():
         for out in step_cfg.get('outputs', []):
             if out.get('slot') == slot:
-                return step_id
-    return None
+                producers.append(step_id)
+                break
+    return producers
+
+
+def find_producer_step(plugin_id: str, slot: str) -> Optional[str]:
+    """Return one step_id that produces slot, or None."""
+    producers = find_producer_steps(plugin_id, slot)
+    return producers[0] if producers else None
 
 
 def get_script_tool(plugin_id: str, tool_name: str) -> Optional[Callable]:
