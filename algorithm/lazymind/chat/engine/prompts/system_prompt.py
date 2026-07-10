@@ -15,13 +15,16 @@ from .guidance import (
 
 _KNOWLEDGE_EVIDENCE_GROUPS = {'kb', 'temp_kb'}
 
-_ONLINE_SEARCH_GUIDANCE = """## Online Source Search
-When the user asks to search the original online Feishu Wiki or Notion workspace, use the
-`online_search` tool group instead of the local knowledge-base tools. Use `search_online`
-for one or more content keywords and `find_online` only for filename/title regular-expression
-matching. Pass `sources=['feishu']` or `sources=['notion']` when the user specifies a provider.
-If the user specifies a Feishu space, Notion database/data source, or filename scope, pass the
-corresponding scope argument. Base the final answer on the returned online results."""
+_CLOUD_DOCUMENT_SEARCH_GROUPS = {'feishu', 'notion'}
+
+_CLOUD_DOCUMENT_SEARCH_GUIDANCE = """## Cloud Document Search
+When the user asks to search original online Feishu Wiki or Notion content, use the
+corresponding LazyLLM file-system tool group directly. Use `FeishuWikiFS_search` or
+`NotionFS_search` for one or more content/title keywords, and use `FeishuWikiFS_find`
+or `NotionFS_find` only for filename/title regular-expression matching. If the user
+specifies a Feishu space, Notion database/data source, or filename/title scope, pass
+the matching scope argument supported by that file-system tool. These tools search
+the online source itself, not the local knowledge base."""
 
 
 def _format_user_time(time_now: object, timezone: object) -> str:
@@ -120,8 +123,8 @@ def build_system_prompt(
     if active_groups & _KNOWLEDGE_EVIDENCE_GROUPS:
         prompt_parts.append(SEARCH_GUIDANCE)
         prompt_parts.append(KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE)
-    if 'online_search' in active_groups:
-        prompt_parts.append(_ONLINE_SEARCH_GUIDANCE)
+    if active_groups & _CLOUD_DOCUMENT_SEARCH_GROUPS:
+        prompt_parts.append(_CLOUD_DOCUMENT_SEARCH_GUIDANCE)
     if 'web_search' in active_groups:
         prompt_parts.append(WEB_SEARCH_GUIDANCE)
     if (

@@ -31,27 +31,36 @@ def _load_system_prompt_module():
             sys.modules[fake_guidance.__name__] = old_guidance
 
 
-def test_online_search_guidance_is_added_for_active_group():
+def test_cloud_document_search_guidance_is_added_for_feishu_group():
     prompt = _load_system_prompt_module().build_system_prompt(
-        {'online_search'}, use_memory=False,
+        {'feishu'}, use_memory=False,
     )
 
-    assert '`search_online`' in prompt
-    assert '`find_online`' in prompt
-    assert "sources=['feishu']" in prompt
-    assert 'local knowledge-base tools' in prompt
+    assert '`FeishuWikiFS_search`' in prompt
+    assert '`FeishuWikiFS_find`' in prompt
+    assert 'not the local knowledge base' in prompt
 
 
-def test_online_search_guidance_is_not_added_for_other_groups():
+def test_cloud_document_search_guidance_is_added_for_notion_group():
+    prompt = _load_system_prompt_module().build_system_prompt(
+        {'notion'}, use_memory=False,
+    )
+
+    assert '`NotionFS_search`' in prompt
+    assert '`NotionFS_find`' in prompt
+
+
+def test_cloud_document_search_guidance_is_not_added_for_other_groups():
     prompt = _load_system_prompt_module().build_system_prompt({'kb'}, use_memory=False)
 
-    assert '`search_online`' not in prompt
+    assert '`FeishuWikiFS_search`' not in prompt
+    assert '`NotionFS_search`' not in prompt
 
 
-def test_online_and_web_search_guidance_can_be_enabled_together():
+def test_cloud_document_and_web_search_guidance_can_be_enabled_together():
     prompt = _load_system_prompt_module().build_system_prompt(
-        {'online_search', 'web_search'}, use_memory=False,
+        {'feishu', 'web_search'}, use_memory=False,
     )
 
-    assert '`search_online`' in prompt
+    assert '`FeishuWikiFS_search`' in prompt
     assert 'web search guidance' in prompt

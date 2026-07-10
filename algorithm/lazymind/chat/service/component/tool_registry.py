@@ -6,7 +6,7 @@ from typing import Any, Callable
 
 import docstring_parser
 import lazyllm
-from lazyllm.tools.fs.supplier.feishu import FeishuFS
+from lazyllm.tools.fs.supplier.feishu import FeishuWikiFS
 from lazyllm.tools.fs.supplier.notion import NotionFS
 from lazyllm.tools.tools.search import (
     ArxivSearch,
@@ -22,7 +22,6 @@ from lazymind.chat.engine.tools import (
     KBToolGroup,
     ExternalDBToolGroup,
     LocalFSToolGroup,
-    OnlineSearchToolGroup,
     SystemQueryToolGroup,
     WriterToolGroup,
     calculator,
@@ -199,21 +198,15 @@ DEFAULT_TOOLS: list[ToolGroupConfig] = [
     ),
     ToolGroupConfig(
         name='feishu',
-        label='飞书文件系统',
-        description='浏览和管理飞书云文档',
-        instance=FeishuFS(space_id='dynamic', dynamic_auth=True),
+        label='飞书 Wiki',
+        description='搜索、查找和读取在线飞书 Wiki 原始文档',
+        instance=FeishuWikiFS(space_id='dynamic', dynamic_auth=True),
     ),
     ToolGroupConfig(
         name='notion',
         label='Notion 文件系统',
         description='浏览、搜索和管理 Notion 页面',
         instance=NotionFS(dynamic_auth=True),
-    ),
-    ToolGroupConfig(
-        name='online_search',
-        label='在线知识库搜索',
-        description='搜索飞书Wiki和Notion在线知识库，支持关键词检索和文件名正则查找',
-        instance=OnlineSearchToolGroup(),
     ),
 ]
 

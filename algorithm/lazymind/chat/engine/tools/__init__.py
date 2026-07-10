@@ -11,7 +11,6 @@ from .local_fs import LocalFSToolGroup
 from .memory_editor import memory_editor
 from .memory_reader import read_memory
 from .multimodal import image_editor, image_generator, vision_extractor
-from .online_search import OnlineSearchToolGroup
 from .schedule import build_schedule_tool_group
 from .skill_editor import skill_editor
 from .system_query import SystemQueryToolGroup
@@ -28,7 +27,6 @@ __all__ = [
     'KBToolGroup',
     'kb_tmp_search',
     'LocalFSToolGroup',
-    'OnlineSearchToolGroup',
     'memory_editor',
     'read_memory',
     'vision_extractor',
