@@ -38,6 +38,8 @@ def test_cloud_document_search_guidance_is_added_for_feishu_group():
 
     assert '`FeishuWikiFS_search`' in prompt
     assert '`FeishuWikiFS_find`' in prompt
+    assert 'do not ask the user to provide a space id, node id, document' in prompt
+    assert 'searches all Wiki documents accessible to the authenticated' in prompt
     assert 'not the local knowledge base' in prompt
 
 
