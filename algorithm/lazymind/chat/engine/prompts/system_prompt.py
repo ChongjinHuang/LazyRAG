@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .guidance import (
     ATTACHED_FILES_GUIDANCE,
+    CLOUD_DOCUMENT_SEARCH_GUIDANCE,
     DEFAULT_SYSTEM_PROMPT,
     IMAGE_REFERENCE_MARKDOWN_GUIDANCE,
     KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE,
@@ -16,24 +17,6 @@ from .guidance import (
 _KNOWLEDGE_EVIDENCE_GROUPS = {'kb', 'temp_kb'}
 
 _CLOUD_DOCUMENT_SEARCH_GROUPS = {'feishu', 'notion'}
-
-_CLOUD_DOCUMENT_SEARCH_GUIDANCE = """## Cloud Document Search
-When the user asks to search original online Feishu Wiki or Notion content, use the
-corresponding LazyLLM file-system tool group directly. Use `FeishuWikiFS_search` or
-`NotionFS_search` for one or more content/title keywords, and use `FeishuWikiFS_find`
-or `NotionFS_find` only for filename/title regular-expression matching.
-
-For Feishu Wiki search, do not ask the user to provide a space id, node id, document
-id, or other internal token. Call `FeishuWikiFS_search` with the user's keywords
-first, so LazyLLM searches all Wiki documents accessible to the authenticated
-account through Feishu's official Wiki search API. Only pass an explicit Feishu
-scope when the user already provided a readable space/title/URL scope. If a
-filename/title regular-expression match is needed, use `FeishuWikiFS_find`, which
-enumerates accessible Wiki spaces before matching names.
-
-For Notion, if the user specifies a database/data source or title scope, pass the
-matching scope argument supported by `NotionFS_search` or `NotionFS_find`. These
-tools search the online source itself, not the local knowledge base."""
 
 
 def _format_user_time(time_now: object, timezone: object) -> str:

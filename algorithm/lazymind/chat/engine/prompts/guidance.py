@@ -95,6 +95,23 @@ DOCUMENT_LINK_GUIDANCE = (
     "linked-page context. Do not fall back to generic URL fetching for private Notion "
     "pages unless Notion tools are unavailable or unauthorized."
 )
+CLOUD_DOCUMENT_SEARCH_GUIDANCE = (
+    "## Cloud Document Search\n"
+    "When the user asks to search original online Feishu Wiki or Notion content, use the "
+    "corresponding LazyLLM file-system tool group directly. Use `FeishuWikiFS_search` or "
+    "`NotionFS_search` for one or more content/title keywords, and use `FeishuWikiFS_find` "
+    "or `NotionFS_find` only for filename/title regular-expression matching.\n\n"
+    "For Feishu Wiki search, do not ask the user to provide a space id, node id, document "
+    "id, or other internal token. Call `FeishuWikiFS_search` with the user's keywords "
+    "first, so LazyLLM searches all Wiki documents accessible to the authenticated "
+    "account through Feishu's official Wiki search API. Only pass an explicit Feishu "
+    "scope when the user already provided a readable space/title/URL scope. If a "
+    "filename/title regular-expression match is needed, use `FeishuWikiFS_find`, which "
+    "enumerates accessible Wiki spaces before matching names.\n\n"
+    "For Notion, if the user specifies a database/data source or title scope, pass the "
+    "matching scope argument supported by `NotionFS_search` or `NotionFS_find`. These "
+    "tools search the online source itself, not the local knowledge base."
+)
 WEB_SEARCH_GUIDANCE = (
     "# Web Search Tool Rules\n"
     "When using `web_search`, the `query` must represent one search intent. "
