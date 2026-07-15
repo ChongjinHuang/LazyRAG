@@ -6,20 +6,19 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"gorm.io/gorm"
 	"lazymind/core/common"
 	"lazymind/core/common/orm"
-	"lazymind/core/doc"
 	"lazymind/core/store"
+	"lazymind/core/subagent"
 )
 
 // resolveValuePaths normalises a human-uploaded value by ensuring it carries a stable
 // absolute path when the value contains a local file path.
 // Signed URL generation is intentionally NOT done here — signed URLs expire and must
-// be generated fresh on every API response (see signArtifactImagePath called from
+// be generated fresh on every API response (see enrichArtifactValue called from
 // enrichSlots and GetSlotItemVersionsByIndex).
 // Values that are not JSON objects with a path field are returned unchanged.
 func resolveValuePaths(raw json.RawMessage) json.RawMessage {
@@ -43,52 +42,9 @@ func resolveValuePaths(raw json.RawMessage) json.RawMessage {
 	return out
 }
 
-// signArtifactImagePath enriches an artifact value with a signed URL when it contains
-// a local file path. Works for both AI-generated artifacts and human-uploaded snapshots.
-// External http(s) URLs stored in the path field are moved to the url field for consistent
-// frontend handling. Local paths are signed fresh (avoiding stale signed URLs in the DB).
-// The path field is preserved alongside url so the algorithm layer can still read the file.
-// Values without a path field, or that already have a url field, are returned unchanged.
-// The contentType parameter is used only to skip non-image processing; pass "image" when
-// the content type is known, or pass "" to attempt signing for any path-bearing value.
-func signArtifactImagePath(raw json.RawMessage, contentType string) json.RawMessage {
-	if len(raw) == 0 {
-		return raw
-	}
-	if contentType != "" && contentType != "image" {
-		return raw
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return raw
-	}
-	pathVal, _ := m["path"].(string)
-	if pathVal == "" {
-		return raw
-	}
-	// Always re-sign regardless of existing url — stored urls may have expired.
-	// External or inline URL stored in path field — move it to url for consistent frontend handling.
-	if strings.HasPrefix(pathVal, "http://") || strings.HasPrefix(pathVal, "https://") ||
-		strings.HasPrefix(pathVal, "data:") {
-		m["url"] = pathVal
-		delete(m, "path")
-		out, err := json.Marshal(m)
-		if err != nil {
-			return raw
-		}
-		return out
-	}
-	// Local path: generate signed URL and keep path for algorithm access.
-	signed := doc.StaticFileURLFromFullPath(pathVal)
-	if signed == "" {
-		return raw
-	}
-	m["url"] = signed
-	out, err := json.Marshal(m)
-	if err != nil {
-		return raw
-	}
-	return out
+// enrichArtifactValue enriches artifact values with fresh browser-accessible signed URLs.
+func enrichArtifactValue(raw json.RawMessage, contentType string) json.RawMessage {
+	return subagent.SignArtifactImageValue(contentType, raw)
 }
 
 // sessionDTO is the frontend shape for a PluginSession.
@@ -105,12 +61,13 @@ type sessionDTO struct {
 	Steps          []stepDTO `json:"steps,omitempty"`
 }
 
-// stepDTO summarises one plugin_session_steps row (used for dependency validation).
+// stepDTO summarises one plugin_session_steps attempt for UI history.
 type stepDTO struct {
 	StepID        string    `json:"step_id"`
 	Attempt       int       `json:"attempt"`
 	TaskID        string    `json:"task_id"`
 	Status        string    `json:"status"`
+	Validity      string    `json:"validity"`
 	IntentContext string    `json:"intent_context,omitempty"`
 	CreatedAt     time.Time `json:"created_at"`
 }
@@ -128,13 +85,13 @@ type slotDTO struct {
 	ArtifactValue json.RawMessage `json:"artifact_value,omitempty"`
 	Caption       *string         `json:"caption,omitempty"`
 	ChangeSource  string          `json:"change_source,omitempty"`
+	StepID        string          `json:"step_id,omitempty"`
 	RevisionCount int             `json:"revision_count,omitempty"`
 	OrderVersion  *int            `json:"order_version,omitempty"`
 
 	// Internal fields — used by enrichSlots, never serialised to the client.
 	ArtifactSeq     *int            `json:"-"`
 	HumanArtifactID *string         `json:"-"`
-	StepID          string          `json:"-"`
 	Attempt         int             `json:"-"`
 	ContentSnapshot json.RawMessage `json:"-"`
 }
@@ -158,6 +115,7 @@ func toStepDTO(r *orm.PluginSessionStep) stepDTO {
 		Attempt:   r.Attempt,
 		TaskID:    r.TaskID,
 		Status:    r.Status,
+		Validity:  r.Validity,
 		CreatedAt: r.CreatedAt,
 	}
 }
@@ -290,7 +248,7 @@ func enrichSlots(ctx context.Context, db *gorm.DB, sessionID string, slots []slo
 			haErr := db.WithContext(ctx).Where("id = ?", *slot.HumanArtifactID).First(&ha).Error
 			if haErr == nil {
 				resolvedContentType = resolveContentType(ha.ContentType, ha.Value)
-				resolved = signArtifactImagePath(ha.Value, resolvedContentType)
+				resolved = enrichArtifactValue(ha.Value, resolvedContentType)
 				resolvedCaption = ha.Caption
 			} else {
 				fmt.Printf("[enrichSlots] WARN: HumanArtifactID=%s not found for slot_id=%s list_index=%v: %v\n",
@@ -307,7 +265,7 @@ func enrichSlots(ctx context.Context, db *gorm.DB, sessionID string, slots []slo
 					if artifactsByTask[k][j].Seq == *slot.ArtifactSeq {
 						a := &artifactsByTask[k][j]
 						resolvedContentType = resolveContentType(a.ContentType, a.Value)
-						resolved = signArtifactImagePath(a.Value, resolvedContentType)
+						resolved = enrichArtifactValue(a.Value, resolvedContentType)
 						resolvedCaption = a.Caption
 						break
 					}
@@ -324,7 +282,7 @@ func enrichSlots(ctx context.Context, db *gorm.DB, sessionID string, slots []slo
 
 		// Legacy fallback: ContentSnapshot for pre-migration rows.
 		if resolved == nil && len(slot.ContentSnapshot) > 0 {
-			resolved = signArtifactImagePath(slot.ContentSnapshot, "")
+			resolved = enrichArtifactValue(slot.ContentSnapshot, "")
 		}
 
 		if resolved == nil {
@@ -420,19 +378,18 @@ func GetSessionDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	dto := toSessionDTO(s)
 	// Load slots inline.
-	revisions, _ := LoadSelectedSlots(ctx, db, sessionID)
+	revisions, _ := LoadDisplaySlots(ctx, db, sessionID)
 	for i := range revisions {
 		dto.Slots = append(dto.Slots, toSlotDTO(&revisions[i]))
 	}
 	enrichSlots(ctx, db, sessionID, dto.Slots)
-	// Load steps inline (used by Python Layer-2 dependency validation).
+	// Load attempt history inline for panel controls and audit display.
 	steps, _ := ListSteps(ctx, db, sessionID)
-	// Build step intent map for fast lookup.
 	intentMap := buildStepIntentMap(ctx, db, sessionID)
 	for i := range steps {
-		sd := toStepDTO(&steps[i])
-		sd.IntentContext = intentMap[steps[i].StepID]
-		dto.Steps = append(dto.Steps, sd)
+		step := toStepDTO(&steps[i])
+		step.IntentContext = intentMap[steps[i].StepID]
+		dto.Steps = append(dto.Steps, step)
 	}
 	common.ReplyOK(w, map[string]any{"session": dto})
 }
@@ -463,7 +420,7 @@ func GetSessionSlots(w http.ResponseWriter, r *http.Request) {
 		common.ReplyErr(w, "session not found", http.StatusNotFound)
 		return
 	}
-	revisions, err := LoadSelectedSlots(ctx, db, sessionID)
+	revisions, err := LoadDisplaySlots(ctx, db, sessionID)
 	if err != nil {
 		common.ReplyErr(w, "query slots failed", http.StatusInternalServerError)
 		return
@@ -516,6 +473,7 @@ func GetSessionSteps(w http.ResponseWriter, r *http.Request) {
 		Attempt       int    `json:"attempt"`
 		TaskID        string `json:"task_id"`
 		Status        string `json:"status"`
+		Validity      string `json:"validity"`
 		IntentContext string `json:"intent_context,omitempty"`
 		CreatedAt     string `json:"created_at"`
 		UpdatedAt     string `json:"updated_at"`
@@ -530,6 +488,7 @@ func GetSessionSteps(w http.ResponseWriter, r *http.Request) {
 			Attempt:       s.Attempt,
 			TaskID:        s.TaskID,
 			Status:        s.Status,
+			Validity:      s.Validity,
 			IntentContext: intentMap[s.StepID],
 			CreatedAt:     s.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 			UpdatedAt:     s.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z"),
@@ -538,7 +497,7 @@ func GetSessionSteps(w http.ResponseWriter, r *http.Request) {
 	common.ReplyOK(w, map[string]any{"steps": out})
 }
 
-// Accepts body: {"selected_revision": int} to switch which revision is displayed.
+// PatchSessionSlot handles PATCH /plugin-sessions/{session_id}/slots/{slot_id}.
 func PatchSessionSlot(w http.ResponseWriter, r *http.Request) {
 	sessionID := common.PathVar(r, "session_id")
 	slotID := common.PathVar(r, "slot_id")
@@ -609,8 +568,11 @@ func GetActiveConversationSession(w http.ResponseWriter, r *http.Request) {
 		common.ReplyOK(w, map[string]any{"session": nil})
 		return
 	}
+	if s.Status == SessionStatusActive {
+		healStaleActiveSession(r.Context(), db, s)
+	}
 	dto := toSessionDTO(s)
-	revisions, _ := LoadSelectedSlots(r.Context(), db, s.ID)
+	revisions, _ := LoadDisplaySlots(r.Context(), db, s.ID)
 	for i := range revisions {
 		dto.Slots = append(dto.Slots, toSlotDTO(&revisions[i]))
 	}
@@ -641,15 +603,8 @@ func GetLatestConversationSession(w http.ResponseWriter, r *http.Request) {
 		common.ReplyOK(w, map[string]any{"session": nil})
 		return
 	}
-
-	// Self-healing: if the session appears active but no steps are still running
-	// (e.g. the server crashed before updating statuses), repair the state so
-	// the frontend doesn't get stuck on "executing".
-	if s.Status == SessionStatusActive {
-		healStaleActiveSession(r.Context(), db, s)
-	}
 	dto := toSessionDTO(s)
-	revisions, _ := LoadSelectedSlots(r.Context(), db, s.ID)
+	revisions, _ := LoadDisplaySlots(r.Context(), db, s.ID)
 	for i := range revisions {
 		dto.Slots = append(dto.Slots, toSlotDTO(&revisions[i]))
 	}
@@ -673,422 +628,6 @@ type stepAttemptDTO struct {
 	StartedAt     string  `json:"started_at"`
 }
 
-// stateGraphNodeDTO is one node in the StateGraph response.
-type stateGraphNodeDTO struct {
-	ID            string                `json:"id"`
-	Label         string                `json:"label"`
-	StepIndex     int                   `json:"step_index"` // 1-based; 0 for terminal nodes
-	Status        string                `json:"status"`
-	IsCurrent     bool                  `json:"is_current"`
-	ArtifactItems []artifactSummaryItem `json:"artifact_items"` // latest-attempt artifacts
-	StepAttempts  []stepAttemptDTO      `json:"step_attempts"`
-}
-
-// stateGraphEdgeDTO is one directed edge in the StateGraph response.
-type stateGraphEdgeDTO struct {
-	From      string `json:"from"`
-	To        string `json:"to"`
-	Condition string `json:"condition"`
-	// EdgeType: "executed" | "current_direct" | "current_reachable" | "skipped"
-	// Computed server-side from execution history and current step.
-	EdgeType string `json:"edge_type"`
-}
-
-// stateGraphResponse is the full response for GET /plugin-sessions/{session_id}/state-graph.
-type stateGraphResponse struct {
-	Nodes         []stateGraphNodeDTO `json:"nodes"`
-	Edges         []stateGraphEdgeDTO `json:"edges"`
-	Initial       string              `json:"initial"`
-	CurrentStepID string              `json:"current_step_id"`
-}
-
-// pluginStateTransitionEdge matches one entry in state.transitions[from][].
-type pluginStateTransitionEdge struct {
-	To        string `json:"to"`
-	Condition string `json:"condition"`
-}
-
-// pluginStateSpec is the relevant subset of the Python /api/plugins/{id} response.
-// state.steps is a map[step_id]→{label,...}; state.transitions is map[from]→[]{to, condition}.
-type pluginStateSpec struct {
-	State struct {
-		Initial     string                                 `json:"initial"`
-		Steps       map[string]map[string]any              `json:"steps"`
-		Transitions map[string][]pluginStateTransitionEdge `json:"transitions"`
-	} `json:"state"`
-}
-
-// buildArtifactPreview extracts a human-readable preview from a raw artifact value JSON.
-// text: first 30 runes of the "text" field.
-// image: filename (with extension) from "path" or "url"; middle-truncated to 30 chars.
-// other content types: empty string.
-func buildArtifactPreview(contentType string, raw []byte) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var m map[string]any
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return ""
-	}
-	switch contentType {
-	case "text":
-		text, _ := m["text"].(string)
-		runes := []rune(text)
-		if len(runes) > 30 {
-			return string(runes[:30]) + "…"
-		}
-		return text
-	case "image":
-		pathVal, _ := m["path"].(string)
-		if pathVal == "" {
-			pathVal, _ = m["url"].(string)
-		}
-		if pathVal == "" {
-			return ""
-		}
-		// Extract filename from path.
-		parts := strings.Split(strings.ReplaceAll(pathVal, "\\", "/"), "/")
-		name := parts[len(parts)-1]
-		// Strip query params.
-		if idx := strings.Index(name, "?"); idx >= 0 {
-			name = name[:idx]
-		}
-		// Middle-truncate to 30 chars: keep first N and last M chars.
-		runes := []rune(name)
-		if len(runes) > 30 {
-			return string(runes[:13]) + "…" + string(runes[len(runes)-14:])
-		}
-		return name
-	default:
-		return ""
-	}
-}
-
-// GetStateGraph handles GET /plugin-sessions/{session_id}/state-graph.
-// Combines the plugin state machine topology from Python with live step statuses from DB.
-func GetStateGraph(w http.ResponseWriter, r *http.Request) {
-	sessionID := common.PathVar(r, "session_id")
-	if sessionID == "" {
-		common.ReplyErr(w, "session_id required", http.StatusBadRequest)
-		return
-	}
-	db := store.DB()
-	if db == nil {
-		common.ReplyErr(w, "store not initialized", http.StatusInternalServerError)
-		return
-	}
-	ctx := r.Context()
-
-	// 1. Load plugin session.
-	sess, err := GetSession(ctx, db, sessionID)
-	if err != nil {
-		if IsNotFound(err) {
-			common.ReplyErr(w, "session not found", http.StatusNotFound)
-			return
-		}
-		common.ReplyErr(w, "query session failed", http.StatusInternalServerError)
-		return
-	}
-	if sess.Dismissed {
-		common.ReplyErr(w, "session not found", http.StatusNotFound)
-		return
-	}
-
-	// 2. Fetch plugin spec from Python to get state machine topology.
-	upstream := common.ChatServiceEndpoint() + "/api/plugins/" + sess.PluginID
-	upCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(upCtx, http.MethodGet, upstream, nil)
-	if err != nil {
-		common.ReplyErr(w, "build upstream request failed", http.StatusInternalServerError)
-		return
-	}
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		common.ReplyErr(w, "upstream request failed", http.StatusBadGateway)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		common.ReplyErr(w, "upstream error", http.StatusBadGateway)
-		return
-	}
-	var spec pluginStateSpec
-	if decErr := json.NewDecoder(resp.Body).Decode(&spec); decErr != nil {
-		common.ReplyErr(w, "decode plugin spec failed", http.StatusInternalServerError)
-		return
-	}
-
-	// 3. Query all step attempts with timing + artifact count.
-	type stepRow struct {
-		StepID        string    `gorm:"column:step_id"`
-		Attempt       int       `gorm:"column:attempt"`
-		Status        string    `gorm:"column:status"`
-		TaskID        string    `gorm:"column:task_id"`
-		CreatedAt     time.Time `gorm:"column:created_at"`
-		UpdatedAt     time.Time `gorm:"column:updated_at"`
-		ArtifactCount int       `gorm:"column:artifact_count"`
-	}
-	var stepRows []stepRow
-	if stepQueryErr := db.WithContext(ctx).Raw(`
-		SELECT
-			s.step_id,
-			s.attempt,
-			s.status,
-			s.task_id,
-			s.created_at,
-			s.updated_at,
-			COALESCE(a.artifact_count, 0) AS artifact_count
-		FROM plugin_session_steps s
-		LEFT JOIN (
-			SELECT step_id, attempt, COUNT(*) AS artifact_count
-			FROM plugin_slot_revisions
-			WHERE session_id = ?
-			GROUP BY step_id, attempt
-		) a ON a.step_id = s.step_id AND a.attempt = s.attempt
-		WHERE s.session_id = ?
-		ORDER BY s.step_id, s.attempt ASC
-	`, sessionID, sessionID).Scan(&stepRows).Error; stepQueryErr != nil {
-		common.ReplyErr(w, "query step rows failed", http.StatusInternalServerError)
-		return
-	}
-	type stepInfo struct {
-		latestStatus  string
-		latestAttempt int
-		attempts      []stepAttemptDTO
-	}
-	stepMap := make(map[string]*stepInfo)
-	for _, r := range stepRows {
-		si, ok := stepMap[r.StepID]
-		if !ok {
-			si = &stepInfo{}
-			stepMap[r.StepID] = si
-		}
-		// Use updated_at - created_at as duration for completed steps.
-		dur := -1.0
-		terminalStatuses := map[string]bool{"succeeded": true, "failed": true, "interrupted": true, "canceled": true}
-		if terminalStatuses[r.Status] {
-			dur = r.UpdatedAt.Sub(r.CreatedAt).Seconds()
-		}
-		si.attempts = append(si.attempts, stepAttemptDTO{
-			Attempt:       r.Attempt,
-			Status:        r.Status,
-			DurationSec:   dur,
-			ArtifactCount: r.ArtifactCount,
-			StartedAt:     r.CreatedAt.UTC().Format("2006-01-02 15:04:05"),
-		})
-		if r.Attempt >= si.latestAttempt {
-			si.latestAttempt = r.Attempt
-			si.latestStatus = r.Status
-		}
-	}
-
-	// 4. Query artifacts for the latest attempt of each step.
-	//    For text artifacts: take first 30 runes of the "text" field.
-	//    For image artifacts: take the filename from the "path" or "url" field.
-	//    De-duplicate by slot, keeping the row with the highest seq.
-	type artifactRow struct {
-		StepID      string `gorm:"column:step_id"`
-		Attempt     int    `gorm:"column:attempt"`
-		Slot        string `gorm:"column:slot"`
-		ContentType string `gorm:"column:content_type"`
-		Value       []byte `gorm:"column:value"`
-	}
-	var artifactRows []artifactRow
-	if artifactQueryErr := db.WithContext(ctx).Raw(`
-		SELECT a.slot, a.content_type, a.value, s.step_id, s.attempt
-		FROM sub_agent_artifacts a
-		JOIN plugin_session_steps s ON s.task_id = a.task_id
-		WHERE s.session_id = ?
-		  AND a.hidden = false
-		  AND a.seq = (
-			SELECT MAX(a2.seq)
-			FROM sub_agent_artifacts a2
-			WHERE a2.task_id = a.task_id
-			  AND a2.slot = a.slot
-		  )
-		  AND s.attempt = (
-			SELECT MAX(s2.attempt)
-			FROM plugin_session_steps s2
-			WHERE s2.session_id = s.session_id
-			  AND s2.step_id = s.step_id
-		  )
-		ORDER BY s.step_id, a.slot
-	`, sessionID).Scan(&artifactRows).Error; artifactQueryErr != nil {
-		common.ReplyErr(w, "query artifact rows failed", http.StatusInternalServerError)
-		return
-	}
-
-	// Group artifact items by step_id, de-dup by slot.
-	stepArtifacts := make(map[string][]artifactSummaryItem)
-	seen := make(map[string]bool) // "step_id:slot"
-	for _, r := range artifactRows {
-		k := r.StepID + ":" + r.Slot
-		if seen[k] {
-			continue
-		}
-		seen[k] = true
-		preview := buildArtifactPreview(r.ContentType, r.Value)
-		stepArtifacts[r.StepID] = append(stepArtifacts[r.StepID], artifactSummaryItem{
-			Slot:        r.Slot,
-			ContentType: r.ContentType,
-			Preview:     preview,
-		})
-	}
-
-	// 5. Build nodes — __start__ + all declared steps (in transition order) + __end__.
-	// Use BFS from initial to enumerate steps in topological order.
-	startNode := stateGraphNodeDTO{
-		ID:        "__start__",
-		Label:     "__start__",
-		Status:    "succeeded",
-		IsCurrent: false,
-	}
-
-	endStatus := "pending"
-	if sess.Status == "completed" {
-		endStatus = "succeeded"
-	}
-	endNode := stateGraphNodeDTO{
-		ID:        "__end__",
-		Label:     "__end__",
-		Status:    endStatus,
-		IsCurrent: false,
-	}
-
-	// BFS to produce a stable step ordering from the state machine topology.
-	visited := map[string]bool{"__start__": true, "__end__": true}
-	queue := []string{"__start__"}
-	orderedStepIDs := []string{}
-	for len(queue) > 0 {
-		cur := queue[0]
-		queue = queue[1:]
-		for _, edge := range spec.State.Transitions[cur] {
-			if !visited[edge.To] && edge.To != "__end__" {
-				visited[edge.To] = true
-				orderedStepIDs = append(orderedStepIDs, edge.To)
-				queue = append(queue, edge.To)
-			}
-		}
-	}
-
-	nodes := []stateGraphNodeDTO{startNode}
-	for i, stepID := range orderedStepIDs {
-		stepData, hasStep := spec.State.Steps[stepID]
-		label := stepID
-		if hasStep {
-			if lv, ok := stepData["label"].(string); ok && lv != "" {
-				label = lv
-			}
-		}
-		status := "pending"
-		var attempts []stepAttemptDTO
-		if si, ok := stepMap[stepID]; ok {
-			status = si.latestStatus
-			attempts = si.attempts
-		}
-		nodes = append(nodes, stateGraphNodeDTO{
-			ID:            stepID,
-			Label:         label,
-			StepIndex:     i + 1,
-			Status:        status,
-			IsCurrent:     stepID == sess.CurrentStepID,
-			StepAttempts:  attempts,
-			ArtifactItems: stepArtifacts[stepID],
-		})
-	}
-	nodes = append(nodes, endNode)
-
-	// 6. Build edges with edge_type based on execution history.
-	//
-	// edge_type rules:
-	//   "executed"         — both from and to have been executed (status != pending)
-	//   "current_direct"   — from == current step (direct successor)
-	//   "current_reachable"— reachable from current via BFS (not direct)
-	//   "skipped"          — neither executed nor reachable from current
-	//
-	// Treat __start__ as always executed; __end__ as executed when session is completed.
-	executedNodes := map[string]bool{"__start__": true}
-	if sess.Status == "completed" || sess.Status == "failed" {
-		executedNodes["__end__"] = true
-	}
-	for nodeID, si := range stepMap {
-		if si.latestStatus != "" && si.latestStatus != "pending" {
-			executedNodes[nodeID] = true
-		}
-	}
-
-	// BFS from current step to find all reachable nodes (direct + indirect).
-	directSuccessors := map[string]bool{}
-	reachableFromCurrent := map[string]bool{}
-	if sess.CurrentStepID != "" {
-		for _, e := range spec.State.Transitions[sess.CurrentStepID] {
-			directSuccessors[e.To] = true
-			reachableFromCurrent[e.To] = true
-		}
-		bfsQueue := []string{}
-		for id := range directSuccessors {
-			bfsQueue = append(bfsQueue, id)
-		}
-		bfsVisited := map[string]bool{sess.CurrentStepID: true}
-		for _, id := range bfsQueue {
-			bfsVisited[id] = true
-		}
-		for len(bfsQueue) > 0 {
-			cur2 := bfsQueue[0]
-			bfsQueue = bfsQueue[1:]
-			for _, e := range spec.State.Transitions[cur2] {
-				if !bfsVisited[e.To] {
-					bfsVisited[e.To] = true
-					reachableFromCurrent[e.To] = true
-					bfsQueue = append(bfsQueue, e.To)
-				}
-			}
-		}
-	}
-
-	edges := make([]stateGraphEdgeDTO, 0)
-	for fromID, edgeList := range spec.State.Transitions {
-		for _, edge := range edgeList {
-			// Skip self-loops.
-			if fromID == edge.To {
-				continue
-			}
-			var edgeType string
-			switch {
-			case executedNodes[fromID] && executedNodes[edge.To]:
-				edgeType = "executed"
-			case fromID == sess.CurrentStepID && directSuccessors[edge.To]:
-				edgeType = "current_direct"
-			case reachableFromCurrent[edge.To] && !executedNodes[edge.To]:
-				edgeType = "current_reachable"
-			default:
-				edgeType = "skipped"
-			}
-			edges = append(edges, stateGraphEdgeDTO{
-				From:      fromID,
-				To:        edge.To,
-				Condition: edge.Condition,
-				EdgeType:  edgeType,
-			})
-		}
-	}
-
-	// 7. Determine initial node id.
-	initial := spec.State.Initial
-	if initial == "" {
-		initial = "__start__"
-	}
-
-	out := stateGraphResponse{
-		Nodes:         nodes,
-		Edges:         edges,
-		Initial:       initial,
-		CurrentStepID: sess.CurrentStepID,
-	}
-	common.ReplyOK(w, out)
-}
-
 // GetPluginInfo handles GET /plugins/{plugin_id}.
 // Proxies to the Python chat service /api/plugins/{plugin_id} and returns the plugin spec
 // including the ui.tabs declaration needed by the frontend PluginPanel.
@@ -1105,6 +644,9 @@ func GetPluginInfo(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		common.ReplyErr(w, "build upstream request failed", http.StatusInternalServerError)
 		return
+	}
+	if lang := r.Header.Get("Accept-Language"); lang != "" {
+		req.Header.Set("Accept-Language", lang)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -1145,6 +687,9 @@ func ListPlugins(w http.ResponseWriter, r *http.Request) {
 		common.ReplyErr(w, "build upstream request failed", http.StatusInternalServerError)
 		return
 	}
+	if lang := r.Header.Get("Accept-Language"); lang != "" {
+		req.Header.Set("Accept-Language", lang)
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		common.ReplyErr(w, "upstream request failed", http.StatusBadGateway)
@@ -1167,6 +712,46 @@ func ListPlugins(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 	}
+}
+
+// SyncSessionSearchConfig handles POST /plugin-sessions/{session_id}:sync-search-config.
+// Persists the current UI knowledge-base selection onto the parent conversation so
+// analyze_subject KB prefetch can read filters.kb_id.
+// Body: {"search_config": {"dataset_list": [{"id": "..."}], "creators": [], "tags": []}}
+func SyncSessionSearchConfig(w http.ResponseWriter, r *http.Request) {
+	sessionID := common.PathVar(r, "session_id")
+	if sessionID == "" {
+		common.ReplyErr(w, "session_id required", http.StatusBadRequest)
+		return
+	}
+	var body struct {
+		SearchConfig map[string]any `json:"search_config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || len(body.SearchConfig) == 0 {
+		common.ReplyErr(w, "search_config required", http.StatusBadRequest)
+		return
+	}
+	db := store.DB()
+	if db == nil {
+		common.ReplyErr(w, "store not initialized", http.StatusInternalServerError)
+		return
+	}
+	ctx := r.Context()
+	session, err := GetSession(ctx, db, sessionID)
+	if err != nil {
+		if IsNotFound(err) {
+			common.ReplyErr(w, "session not found", http.StatusNotFound)
+			return
+		}
+		common.ReplyErr(w, "query session failed", http.StatusInternalServerError)
+		return
+	}
+	userID := store.UserID(r)
+	if err := persistConversationSearchConfig(db, session.ConversationID, userID, body.SearchConfig); err != nil {
+		common.ReplyErr(w, "persist search_config failed", http.StatusInternalServerError)
+		return
+	}
+	common.ReplyOK(w, map[string]any{"conversation_id": session.ConversationID})
 }
 
 // ReorderSlotItems handles PATCH /plugin-sessions/{session_id}/slots/{slot_id}/order.
@@ -1483,6 +1068,14 @@ func DismissSessionHandler(w http.ResponseWriter, r *http.Request) {
 	if db == nil {
 		common.ReplyErr(w, "store not initialized", http.StatusInternalServerError)
 		return
+	}
+	if session, err := GetSession(r.Context(), db, sessionID); err == nil &&
+		!session.Dismissed && session.Status == SessionStatusActive {
+		// Reuse the same cancellation path as the visible Stop button so every
+		// pending/running parallel SubAgent receives a Python cancel signal. Only
+		// do this for the session being dismissed: an older waiting session may
+		// share the conversation with a newer active session.
+		stopPluginSession(r.Context(), db, store.State(), session)
 	}
 	if err := DismissSession(r.Context(), db, sessionID); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) || err.Error() == "session not found or already dismissed" {

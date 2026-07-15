@@ -249,6 +249,21 @@ func ChatConversations(w http.ResponseWriter, r *http.Request) {
 	// It is injected into plugin_context (below) so Python can use it; it is not sent
 	// as a top-level reqBody field because Python reads it exclusively from plugin_context.
 	pluginMode := resolvePluginModeWithFallback(raw, reqBody)
+	existingPluginContext, _ := reqBody["plugin_context"].(map[string]any)
+	if existingPluginContext == nil {
+		existingPluginContext = map[string]any{}
+	}
+	existingPluginContext["plugin_mode"] = pluginMode
+	reqBody["plugin_context"] = existingPluginContext
+	if preflight := loadPluginPreflightContext(r.Context(), db, convID); len(preflight) > 0 {
+		existing, _ := reqBody["plugin_context"].(map[string]any)
+		if existing == nil {
+			existing = map[string]any{}
+		}
+		existing["plugin_mode"] = pluginMode
+		existing["plugin_preflight"] = preflight
+		reqBody["plugin_context"] = existing
+	}
 
 	// Promote enable_plugin and enable_subagent from agentic_config to top-level
 	// so Python chat_routes can receive them as explicit parameters.
@@ -260,6 +275,22 @@ func ChatConversations(w http.ResponseWriter, r *http.Request) {
 			reqBody["enable_subagent"] = v
 		}
 	}
+	if enabled, _ := reqBody["enable_plugin"].(bool); enabled {
+		catalog, catalogErr := plugin.EnabledCatalog(db, userID)
+		if catalogErr != nil {
+			common.ReplyErr(w, "load plugin catalog failed", http.StatusInternalServerError)
+			return
+		}
+		reqBody["plugin_catalog"] = catalog
+		disabledBuiltins, disabledErr := plugin.DisabledBuiltinPluginIDs(db, userID)
+		if disabledErr != nil {
+			common.ReplyErr(w, "load builtin plugin settings failed", http.StatusInternalServerError)
+			return
+		}
+		reqBody["disabled_builtin_plugins"] = disabledBuiltins
+	} else {
+		reqBody["plugin_catalog"] = []map[string]any{}
+	}
 
 	if activeSess, err := plugin.GetLatestSession(r.Context(), db, convID); err == nil && activeSess != nil {
 		existing, hasPC := reqBody["plugin_context"].(map[string]any)
@@ -270,6 +301,7 @@ func ChatConversations(w http.ResponseWriter, r *http.Request) {
 				"plugin_id":    activeSess.PluginID,
 				"current_step": activeSess.CurrentStepID,
 				"plugin_mode":  pluginMode,
+				"plugin_ref":   activeSess.PluginRef, "revision_id": activeSess.PluginRevisionID, "revision_no": activeSess.PluginRevisionNo, "tree_hash": activeSess.PluginTreeHash, "remote_root": activeSess.PluginRemoteRoot,
 			}
 			fmt.Printf("[PLUGIN_CONTEXT_INJECTED] conversation_id=%s session_id=%s plugin_id=%s current_step=%s plugin_mode=%s\n",
 				convID, activeSess.ID, activeSess.PluginID, activeSess.CurrentStepID, pluginMode)
@@ -289,16 +321,33 @@ func ChatConversations(w http.ResponseWriter, r *http.Request) {
 				stale = true
 			}
 			existing["plugin_mode"] = pluginMode
+			existing["plugin_ref"] = activeSess.PluginRef
+			existing["revision_id"] = activeSess.PluginRevisionID
+			existing["revision_no"] = activeSess.PluginRevisionNo
+			existing["tree_hash"] = activeSess.PluginTreeHash
+			existing["remote_root"] = activeSess.PluginRemoteRoot
 			if stale {
 				fmt.Printf("[PLUGIN_CONTEXT_CORRECTED] conversation_id=%s session_id=%s plugin_id=%s current_step=%s\n",
 					convID, activeSess.ID, activeSess.PluginID, activeSess.CurrentStepID)
 			}
 		}
-	} else if _, hasPC := reqBody["plugin_context"]; hasPC {
+	} else if existing, hasPC := reqBody["plugin_context"].(map[string]any); hasPC {
 		// No active session in DB but frontend sent a plugin_context — clear it to avoid
 		// Python entering advance-step mode with a stale/non-existent session.
-		delete(reqBody, "plugin_context")
-		fmt.Printf("[PLUGIN_CONTEXT_CLEARED] conversation_id=%s no active session in DB\n", convID)
+		if preflight, ok := existing["plugin_preflight"].(map[string]any); ok && len(preflight) > 0 {
+			for _, key := range []string{"session_id", "plugin_id", "current_step", "plugin_ref", "revision_id", "revision_no", "tree_hash", "remote_root"} {
+				delete(existing, key)
+			}
+			existing["plugin_mode"] = pluginMode
+			reqBody["plugin_context"] = existing
+		} else {
+			for _, key := range []string{"session_id", "plugin_id", "current_step", "plugin_ref", "revision_id", "revision_no", "tree_hash", "remote_root"} {
+				delete(existing, key)
+			}
+			existing["plugin_mode"] = pluginMode
+			reqBody["plugin_context"] = existing
+			fmt.Printf("[PLUGIN_CONTEXT_CLEARED] conversation_id=%s no active session in DB\n", convID)
+		}
 	}
 	historyExt := buildChatHistoryExt(raw, query)
 	if err := applyChatRuntimeConfigs(r.Context(), db, userID, reqBody); err != nil {
@@ -443,6 +492,7 @@ func resumeFromDBOnly(db *gorm.DB, convID string, flusher http.Flusher, w http.R
 		"delta":           stripThinkTags(stripToolTags(last.Result)),
 		"finish_reason":   "FINISH_REASON_STOP",
 		"history_id":      last.ID,
+		"tool_call_turns": last.ToolCallTurns,
 	})
 }
 
@@ -456,6 +506,7 @@ func resumeCompletedFromDB(db *gorm.DB, convID string, flusher http.Flusher, w h
 			"delta":           stripThinkTags(stripToolTags(last.Result)),
 			"finish_reason":   "FINISH_REASON_STOP",
 			"history_id":      last.ID,
+			"tool_call_turns": last.ToolCallTurns,
 		})
 		return
 	}
@@ -477,6 +528,7 @@ func resumeCompletedFromDB(db *gorm.DB, convID string, flusher http.Flusher, w h
 			"delta":           stripThinkTags(stripToolTags(h.Result)),
 			"finish_reason":   finish,
 			"history_id":      h.ID,
+			"tool_call_turns": h.ToolCallTurns,
 		})
 	}
 }
@@ -681,18 +733,23 @@ func resumeMultiAnswerChat(ctx context.Context, stateStore state.Store, convID s
 	}
 }
 
-// StopChatGeneration text POST /api/v1/conversations:stopChatGeneration
+// StopChatGeneration handles:
+//   - POST /conversations:stopChatGeneration (conversation_id in JSON body)
+//   - POST /conversations/{conversation_id}:stop (conversation_id in path; body optional)
 func StopChatGeneration(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		ConversationID string `json:"conversation_id"`
 		HistoryID      string `json:"history_id"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
 		common.ReplyErr(w, fmt.Sprintf("%s: %v", "invalid body", err), http.StatusBadRequest)
 		return
 	}
 	convID := strings.TrimSpace(body.ConversationID)
 	historyID := strings.TrimSpace(body.HistoryID)
+	if convID == "" {
+		convID = conversationIDFromPath(r)
+	}
 	if convID == "" {
 		common.ReplyErr(w, "conversation_id required", http.StatusBadRequest)
 		return
@@ -907,6 +964,7 @@ func chatHistoryToResponseItem(h orm.ChatHistory) map[string]any {
 		"reason":          h.Reason,
 		"expected_answer": h.ExpectedAnswer,
 		"create_time":     h.CreateTime.UTC().Format(time.RFC3339),
+		"tool_call_turns": h.ToolCallTurns,
 	}
 	if askPending != nil {
 		item["ask_pending"] = askPending
@@ -1334,7 +1392,6 @@ func SetChatHistory(w http.ResponseWriter, r *http.Request) {
 			common.ReplyErr(w, fmt.Sprintf("%s: %v", "set history failed", err), http.StatusInternalServerError)
 			return
 		}
-		recordConversationIdleAfterPersist(context.Background(), db, store.State(), selected.ConversationID, userID, selected.ID, now, selected.RawContent, stripToolTags(selected.Result))
 	}
 
 	_ = db.Where("id IN ?", []string{body.SetHistoryID, body.DeletedHistoryID}).Delete(&orm.MultiAnswersChatHistory{}).Error

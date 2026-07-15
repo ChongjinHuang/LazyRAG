@@ -9,15 +9,18 @@ import shutil
 import threading
 import time
 from collections.abc import Mapping
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 from fastapi import HTTPException
 
-from evo.artifact_flow.commands import CancelFlow, ContinueFlow, PauseFlow, ResumeFlow, RetryFlow
+from evo.artifact_flow.commands import ApplyArtifactMutation, CancelFlow, ContinueFlow, PauseFlow, ResumeFlow, RetryFlow
 from evo.artifact_flow.commands import FlowCommand
-from evo.operations.router_ledger import RouterAlgorithmLedger
-from evo.operations.router_manager import RouterManager, RouterManagerError
+from evo.artifact_runtime.evo.actions import InvalidateFromStep, RerunStep
+from evo.operations.route.router_algorithm import manage_owned_algorithm
+from evo.operations.route.router_ledger import RouterAlgorithmLedger, RouterLedgerError
+from evo.operations.route.router_manager import RouterManager, RouterManagerError
 from .runtime_port import RuntimePort
 
 THREAD_ID = re.compile(r'[A-Za-z0-9][A-Za-z0-9_.-]{0,127}')
@@ -35,6 +38,18 @@ class ThreadService:
         self.download_root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
         self._active: set[str] = set()
+
+    @contextmanager
+    def exclusive_operation(self, thread_id: str) -> Iterator[None]:
+        with self._lock:
+            if thread_id in self._active:
+                raise HTTPException(409, 'thread already has an active command')
+            self._active.add(thread_id)
+        try:
+            yield
+        finally:
+            with self._lock:
+                self._active.discard(thread_id)
 
     def create(self, payload: Mapping[str, Any]) -> dict[str, Any]:
         inputs = _inputs(payload['inputs'])
@@ -79,6 +94,10 @@ class ThreadService:
             'title': str(config.get('title') or ''),
             'status': status['status'],
             'current_step': status['current_step'],
+            'checkpoint_state': status['checkpoint_state'],
+            'first_missing_step': status['first_missing_step'],
+            'last_released_step': status['last_released_step'],
+            'retry_from_step': status['retry_from_step'],
             'last_error': status['last_error'],
         }
         if include_inputs:
@@ -204,6 +223,54 @@ class ThreadService:
             with self._lock:
                 self._active.discard(thread_id)
 
+    def submit_message_command(
+        self,
+        thread_id: str,
+        config: Mapping[str, Any],
+        command: FlowCommand,
+        schedule: Callable[[Callable[[], None]], None],
+    ):
+        if isinstance(command, ContinueFlow):
+            snapshot = self.runtime.query(_num_case(config)).snapshot(thread_id)
+            payload = {'command_id': command.command_id, 'until_step': command.until_step}
+            if not any(item.completed for item in snapshot.progress) and snapshot.status != 'paused':
+                return self.start(thread_id, payload, schedule)
+            return self.continue_thread(thread_id, payload, schedule)
+        if isinstance(command, ResumeFlow):
+            return self.continue_thread(thread_id, {'command_id': command.command_id}, schedule)
+        if isinstance(command, RetryFlow):
+            return self.retry(thread_id, {'command_id': command.command_id}, schedule)
+        if isinstance(command, PauseFlow):
+            return self.pause(thread_id, {'command_id': command.command_id})
+        if isinstance(command, CancelFlow):
+            return self.cancel(thread_id, {'command_id': command.command_id})
+        if isinstance(command, ApplyArtifactMutation) and _mutation_should_continue(command):
+            return self._submit_mutation_and_continue(thread_id, config, command, schedule)
+        return self.run_message_command(thread_id, config, command)
+
+    def _submit_mutation_and_continue(
+        self,
+        thread_id: str,
+        config: Mapping[str, Any],
+        command: ApplyArtifactMutation,
+        schedule: Callable[[Callable[[], None]], None],
+    ) -> dict[str, str]:
+        with self._lock:
+            if thread_id in self._active:
+                raise HTTPException(409, 'thread already has an active command')
+            snapshot = self.runtime.query(_num_case(config)).snapshot(thread_id)
+            if snapshot.status == 'cancelled':
+                raise HTTPException(409, 'cancelled thread cannot be executed')
+            self._active.add(thread_id)
+
+        def run() -> None:
+            flow = self.runtime.flow(_num_case(config))
+            result = flow.handle(thread_id, command)
+            if result.command_status == 'ok':
+                flow.handle(thread_id, ContinueFlow(f'{command.command_id}:continue'))
+
+        return self._submit(thread_id, command.command_id, schedule, run)
+
     def _config(self, thread_id: str) -> Mapping[str, Any]:
         if not THREAD_ID.fullmatch(str(thread_id or '')):
             raise HTTPException(400, 'invalid thread_id')
@@ -259,27 +326,42 @@ class ThreadService:
             status = 'paused'
         else:
             status = 'idle'
-        current = next((item.step for item in progress if not item.completed), progress[-1].step if progress else '')
-        return {'status': status, 'current_step': current, 'last_error': gate.last_error}
+        checkpoint = snapshot.checkpoint
+        return {
+            'status': status,
+            'current_step': checkpoint.current_step,
+            'checkpoint_state': checkpoint.checkpoint_state,
+            'first_missing_step': checkpoint.first_missing_step,
+            'last_released_step': checkpoint.last_released_step,
+            'retry_from_step': checkpoint.retry_from_step,
+            'last_error': gate.last_error,
+        }
 
     def _stop_owned_router_algorithms(self, thread_id: str) -> None:
         ledger = RouterAlgorithmLedger(self.runtime.store_root)
+        owned = ledger.list_algorithms(thread_id=thread_id)
+        if any(row.get('expected_state') in {'claiming', 'deleting', 'managing'} for row in owned):
+            raise HTTPException(409, 'router algorithm operation is in progress')
+        if any(row.get('cleanup_policy') == 'manual' for row in owned):
+            raise HTTPException(409, 'delete manually managed router algorithms before deleting the thread')
         rows = [
-            row for row in ledger.list_algorithms(thread_id=thread_id, expected_state='active')
+            row for row in owned
             if row.get('cleanup_policy') == 'thread_delete'
+            and row.get('expected_state') in {'active', 'orphaned', 'stopped'}
         ]
         for row in rows:
             algorithm_id = str(row['algorithm_id'])
             manager = RouterManager(str(row['router_admin_url']), str(row['service_url']))
             try:
-                if algorithm_id in _strategy_weights(manager.get_ab_strategy()):
+                manage_owned_algorithm(manager, ledger, algorithm_id, 'stop', timeout_s=0)
+            except RouterLedgerError as exc:
+                raise HTTPException(409, f'router algorithm operation is in progress: {algorithm_id}') from exc
+            except RouterManagerError as exc:
+                if exc.kind == 'algorithm_in_ab_strategy':
                     raise HTTPException(
                         409,
                         f'router algorithm {algorithm_id} is referenced by active AB strategy',
-                    )
-                manager.stop_algorithm(algorithm_id)
-                ledger.mark_state(algorithm_id, 'stopped')
-            except RouterManagerError as exc:
+                    ) from exc
                 raise HTTPException(503, f'failed to stop router algorithm {algorithm_id}: {exc}') from exc
 
 
@@ -365,6 +447,10 @@ def _accepted(thread_id: str, command_id: str) -> dict[str, str]:
     return {'status': 'accepted', 'thread_id': thread_id, 'command_id': command_id}
 
 
+def _mutation_should_continue(command: ApplyArtifactMutation) -> bool:
+    return isinstance(command.mutation, (RerunStep, InvalidateFromStep))
+
+
 def _validate_step(step: str) -> None:
     if step and step not in STEPS:
         raise HTTPException(422, 'until_step must be dataset, eval, analysis, repair, or abtest')
@@ -382,11 +468,6 @@ def _digest(value: object) -> str:
         ensure_ascii=False,
     ).encode()
     return hashlib.sha256(raw).hexdigest()
-
-
-def _strategy_weights(strategy: Mapping[str, Any]) -> dict[str, Any]:
-    raw = strategy.get('strategy') if isinstance(strategy.get('strategy'), Mapping) else None
-    return dict((raw or {}).get('weights') or {})
 
 
 __all__ = ['ThreadService']

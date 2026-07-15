@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +17,6 @@ const (
 
 	scanControlPlaneHealthTimeout = 180 * time.Second
 	fileWatcherHealthTimeout      = 180 * time.Second
-	scanControlPlaneDBWaitTimeout = 180 * time.Second
 )
 
 type ScanControlPlaneManager struct {
@@ -42,7 +40,7 @@ func (m *ScanControlPlaneManager) Run(ctx context.Context, cfg RuntimeConfig, pa
 	if err := os.MkdirAll(paths.ScanControlPlaneTempDir, 0o755); err != nil {
 		return err
 	}
-	if err := m.build(ctx, paths); err != nil {
+	if err := m.build(ctx, cfg, paths); err != nil {
 		return err
 	}
 	if err := m.waitForDatabase(ctx, cfg, paths); err != nil {
@@ -54,13 +52,21 @@ func (m *ScanControlPlaneManager) Run(ctx context.Context, cfg RuntimeConfig, pa
 	cmd.Env = append(os.Environ(), scanControlPlaneEnv(cfg, paths)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	configureChildProcess(cmd, false)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start scan-control-plane failed: %w", err)
 	}
+	releaseJob, err := attachManagedProcess(paths, scanControlPlaneProcessName, cmd.Process)
+	if err != nil {
+		_ = forceKillProcessTree(cmd.Process.Pid)
+		return fmt.Errorf("attach scan-control-plane process containment failed: %w", err)
+	}
+	defer releaseJob()
 	if err := os.WriteFile(paths.ScanControlPlanePIDFile, []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o600); err != nil {
 		_ = cmd.Process.Kill()
 		return err
 	}
+	registerLocalProcess(paths, scanControlPlaneProcessName, cmd.Process.Pid, []int{cfg.LocalProxy.ScanHostPort}, []string{paths.ScanControlPlaneBin})
 
 	waitErr := make(chan error, 1)
 	go func() {
@@ -69,11 +75,13 @@ func (m *ScanControlPlaneManager) Run(ctx context.Context, cfg RuntimeConfig, pa
 	if err := waitForHTTPHealth(ctx, cfg.LocalProxy.ScanHostPort, "/healthz", scanControlPlaneProcessName, scanControlPlaneHealthTimeout, waitErr); err != nil {
 		_ = cmd.Process.Kill()
 		_ = os.Remove(paths.ScanControlPlanePIDFile)
+		unregisterLocalProcess(paths, scanControlPlaneProcessName, cmd.Process.Pid)
 		return err
 	}
 
-	err := <-waitErr
+	err = <-waitErr
 	_ = os.Remove(paths.ScanControlPlanePIDFile)
+	unregisterLocalProcess(paths, scanControlPlaneProcessName, cmd.Process.Pid)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -83,7 +91,13 @@ func (m *ScanControlPlaneManager) Run(ctx context.Context, cfg RuntimeConfig, pa
 	return nil
 }
 
-func (m *ScanControlPlaneManager) build(ctx context.Context, paths RuntimePaths) error {
+func (m *ScanControlPlaneManager) build(ctx context.Context, cfg RuntimeConfig, paths RuntimePaths) error {
+	if cfg.Profile == "desktop" {
+		if info, err := os.Stat(paths.ScanControlPlaneBin); err == nil && !info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("desktop scan-control-plane binary not found: %s", paths.ScanControlPlaneBin)
+	}
 	goBin := strings.TrimSpace(os.Getenv("GO"))
 	if goBin == "" {
 		goBin = "go"
@@ -92,6 +106,7 @@ func (m *ScanControlPlaneManager) build(ctx context.Context, paths RuntimePaths)
 		Name: goBin,
 		Args: []string{"build", "-buildvcs=false", "-o", paths.ScanControlPlaneBin, "./cmd/scan-control-plane"},
 		Dir:  filepath.Join(paths.RepoRoot, scanControlPlaneSourceDirName),
+		Env:  goToolEnv(paths),
 	})
 	if err != nil {
 		return fmt.Errorf("build scan-control-plane failed: %w (%s)", err, strings.TrimSpace(res.Stderr))
@@ -109,65 +124,11 @@ func (m *ScanControlPlaneManager) waitForDatabase(ctx context.Context, cfg Runti
 	if strings.EqualFold(envText("LAZYMIND_SCAN_CONTROL_PLANE_DB_DRIVER", "sqlite"), "sqlite") {
 		return nil
 	}
-
-	deadline := time.NewTimer(scanControlPlaneDBWaitTimeout)
-	defer deadline.Stop()
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	var lastErr error
-	for {
-		res, err := m.runner.Run(ctx, Command{
-			Name: "docker",
-			Args: []string{
-				"compose",
-				"-f", repoComposeFileName,
-				"-f", localComposeOverrideName,
-				"exec",
-				"-T",
-				"db",
-				"psql",
-				"-U", "root",
-				"-d", "scan_control_plane",
-				"-c", "SELECT 1",
-			},
-			Dir: paths.RepoRoot,
-		})
-		if err == nil {
-			if err := postgresHostPortReady(ctx, cfg.Algorithm.PostgresPort); err == nil {
-				return nil
-			} else {
-				lastErr = err
-			}
-		} else if stderr := strings.TrimSpace(res.Stderr); stderr != "" {
-			lastErr = fmt.Errorf("%w: %s", err, stderr)
-		} else {
-			lastErr = err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-deadline.C:
-			if lastErr != nil {
-				return fmt.Errorf("scan-control-plane database did not become ready: %w", lastErr)
-			}
-			return fmt.Errorf("scan-control-plane database did not become ready at %s", serviceEndpointsFromConfig(cfg).Host.PostgresAddress)
-		case <-ticker.C:
-		}
-	}
-}
-
-func postgresHostPortReady(ctx context.Context, port int) error {
-	dialer := net.Dialer{Timeout: time.Second}
-	conn, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
-	if err != nil {
-		return err
-	}
-	_ = conn.Close()
-	return nil
+	return fmt.Errorf("local scan-control-plane supports sqlite only; unset LAZYMIND_SCAN_CONTROL_PLANE_DB_DRIVER or set it to sqlite")
 }
 
 func (m *ScanControlPlaneManager) Down(ctx context.Context, paths RuntimePaths) error {
-	return stopPIDFileProcess(ctx, paths.ScanControlPlanePIDFile)
+	return stopPIDFileProcess(ctx, paths, scanControlPlaneProcessName, paths.ScanControlPlanePIDFile)
 }
 
 type FileWatcherManager struct {
@@ -197,7 +158,7 @@ func (m *FileWatcherManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 			return err
 		}
 	}
-	if err := m.build(ctx, paths); err != nil {
+	if err := m.build(ctx, cfg, paths); err != nil {
 		return err
 	}
 
@@ -206,13 +167,21 @@ func (m *FileWatcherManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 	cmd.Env = append(os.Environ(), fileWatcherEnv(cfg, paths)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	configureChildProcess(cmd, false)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start file-watcher failed: %w", err)
 	}
+	releaseJob, err := attachManagedProcess(paths, fileWatcherProcessName, cmd.Process)
+	if err != nil {
+		_ = forceKillProcessTree(cmd.Process.Pid)
+		return fmt.Errorf("attach file-watcher process containment failed: %w", err)
+	}
+	defer releaseJob()
 	if err := os.WriteFile(paths.FileWatcherPIDFile, []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o600); err != nil {
 		_ = cmd.Process.Kill()
 		return err
 	}
+	registerLocalProcess(paths, fileWatcherProcessName, cmd.Process.Pid, []int{cfg.FileWatcher.Port}, append([]string{paths.FileWatcherBin}, cmd.Args...))
 
 	waitErr := make(chan error, 1)
 	go func() {
@@ -221,11 +190,13 @@ func (m *FileWatcherManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 	if err := waitForHTTPHealth(ctx, cfg.FileWatcher.Port, "/healthz", fileWatcherProcessName, fileWatcherHealthTimeout, waitErr); err != nil {
 		_ = cmd.Process.Kill()
 		_ = os.Remove(paths.FileWatcherPIDFile)
+		unregisterLocalProcess(paths, fileWatcherProcessName, cmd.Process.Pid)
 		return err
 	}
 
-	err := <-waitErr
+	err = <-waitErr
 	_ = os.Remove(paths.FileWatcherPIDFile)
+	unregisterLocalProcess(paths, fileWatcherProcessName, cmd.Process.Pid)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -235,7 +206,13 @@ func (m *FileWatcherManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 	return nil
 }
 
-func (m *FileWatcherManager) build(ctx context.Context, paths RuntimePaths) error {
+func (m *FileWatcherManager) build(ctx context.Context, cfg RuntimeConfig, paths RuntimePaths) error {
+	if cfg.Profile == "desktop" {
+		if info, err := os.Stat(paths.FileWatcherBin); err == nil && !info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("desktop file-watcher binary not found: %s", paths.FileWatcherBin)
+	}
 	goBin := strings.TrimSpace(os.Getenv("GO"))
 	if goBin == "" {
 		goBin = "go"
@@ -244,6 +221,7 @@ func (m *FileWatcherManager) build(ctx context.Context, paths RuntimePaths) erro
 		Name: goBin,
 		Args: []string{"build", "-buildvcs=false", "-o", paths.FileWatcherBin, "./cmd/main.go"},
 		Dir:  filepath.Join(paths.RepoRoot, fileWatcherSourceDirName),
+		Env:  goToolEnv(paths),
 	})
 	if err != nil {
 		return fmt.Errorf("build file-watcher failed: %w (%s)", err, strings.TrimSpace(res.Stderr))
@@ -252,7 +230,7 @@ func (m *FileWatcherManager) build(ctx context.Context, paths RuntimePaths) erro
 }
 
 func (m *FileWatcherManager) Down(ctx context.Context, paths RuntimePaths) error {
-	return stopPIDFileProcess(ctx, paths.FileWatcherPIDFile)
+	return stopPIDFileProcess(ctx, paths, fileWatcherProcessName, paths.FileWatcherPIDFile)
 }
 
 func scanControlPlaneEnv(cfg RuntimeConfig, paths RuntimePaths) []string {
@@ -288,6 +266,7 @@ func fileWatcherEnv(cfg RuntimeConfig, paths RuntimePaths) []string {
 		"LAZYMIND_FILE_WATCHER_ADVERTISE_ADDR=http://127.0.0.1:" + strconv.Itoa(cfg.FileWatcher.Port),
 		"LAZYMIND_FILE_WATCHER_CONTROL_PLANE_BASE_URL=http://127.0.0.1:" + strconv.Itoa(cfg.LocalProxy.ScanHostPort),
 		"LAZYMIND_FILE_WATCHER_BASE_ROOT=" + paths.FileWatcherBaseRoot,
+		"LAZYMIND_FILE_WATCHER_STAGING_RUNTIME_ROOT=" + filepath.Join(paths.FileWatcherBaseRoot, "staging"),
 		"LAZYMIND_FILE_WATCHER_HOST_PATH_STYLE=" + cfg.FileWatcher.HostPathStyle,
 		"LAZYMIND_FILE_WATCHER_WATCH_HOST_DIR=" + cfg.FileWatcher.WatchHostDir,
 		"LAZYMIND_FILE_WATCHER_WATCH_CONTAINER_DIR=" + cfg.FileWatcher.WatchHostDir,
@@ -303,7 +282,7 @@ func fileWatcherHealthAlive(port int, timeout time.Duration) bool {
 	return httpOK(context.Background(), "http://127.0.0.1:"+strconv.Itoa(port)+"/healthz", timeout)
 }
 
-func stopPIDFileProcess(ctx context.Context, pidFile string) error {
+func stopPIDFileProcess(ctx context.Context, paths RuntimePaths, service string, pidFile string) error {
 	raw, err := os.ReadFile(pidFile)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -321,9 +300,14 @@ func stopPIDFileProcess(ctx context.Context, pidFile string) error {
 		_ = os.Remove(pidFile)
 		return nil
 	}
-	if err := proc.Signal(os.Interrupt); err != nil {
-		_ = proc.Kill()
+	if err := interruptProcess(pid); err != nil {
+		_ = proc.Signal(os.Interrupt)
 	}
+	if !processAlive(pid) {
+		_ = os.Remove(pidFile)
+		return nil
+	}
+	_ = proc
 
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -332,10 +316,10 @@ func stopPIDFileProcess(ctx context.Context, pidFile string) error {
 	for {
 		select {
 		case <-ctx.Done():
-			_ = proc.Kill()
+			_ = forceStopManagedProcess(paths, service, pid)
 			return ctx.Err()
 		case <-deadline.C:
-			_ = proc.Kill()
+			_ = forceStopManagedProcess(paths, service, pid)
 			_ = os.Remove(pidFile)
 			return nil
 		case <-ticker.C:

@@ -25,7 +25,6 @@ export type DataSourceFileType =
   | "pdf"
   | "doc"
   | "docx"
-  | "hwp"
   | "ppt"
   | "pptx"
   | "pptm"
@@ -74,6 +73,9 @@ export interface PendingOAuthAttempt {
   resolved: boolean;
   accountId?: string;
   appId?: string;
+  provider?: "feishu" | "notion";
+  openWizardOnSuccess?: boolean;
+  reopenSetupOnFailure?: boolean;
 }
 
 export interface SyncLogItem {
@@ -142,6 +144,7 @@ export interface DataSourceItem {
   rootPath?: string;
   targetRef?: string;
   targetRefs?: string[];
+  targetLabels?: Record<string, string>;
   targetType?: CloudTargetType;
   targetTypes?: Record<string, CloudTargetType>;
   authConnectionId?: string;

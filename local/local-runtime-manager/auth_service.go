@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +19,7 @@ import (
 
 const (
 	authServiceOpenAPIExportEnvVar = "LAZYMIND_AUTH_OPENAPI_EXPORT_ENABLED"
+	authServicePermissionsEnvVar   = "LAZYMIND_AUTH_API_PERMISSIONS_FILE"
 	authServiceHealthPath          = "/api/authservice/auth/health"
 	authServiceHealthTimeout       = 180 * time.Second
 	authServiceDBWaitTimeout       = 180 * time.Second
@@ -38,6 +38,9 @@ func (m *AuthServiceManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 		return err
 	}
 	if err := m.preparePythonEnv(ctx, cfg, paths); err != nil {
+		return err
+	}
+	if err := m.generateAPIPermissions(ctx, paths); err != nil {
 		return err
 	}
 	if err := waitForAuthDatabase(ctx, cfg.AuthService.DatabaseURL); err != nil {
@@ -60,14 +63,22 @@ func (m *AuthServiceManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 	cmd.Env = append(os.Environ(), authServiceEnv(cfg, paths)...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
+	configureChildProcess(cmd, false)
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("start auth-service failed: %w", err)
 	}
+	releaseJob, err := attachManagedProcess(paths, authServiceProcessName, cmd.Process)
+	if err != nil {
+		_ = forceKillProcessTree(cmd.Process.Pid)
+		return fmt.Errorf("attach auth-service process containment failed: %w", err)
+	}
+	defer releaseJob()
 	if err := os.WriteFile(paths.AuthServicePIDFile, []byte(strconv.Itoa(cmd.Process.Pid)+"\n"), 0o600); err != nil {
 		_ = cmd.Process.Kill()
 		return err
 	}
+	registerLocalProcess(paths, authServiceProcessName, cmd.Process.Pid, []int{cfg.AuthService.Port}, append([]string{python}, cmd.Args...))
 
 	waitErr := make(chan error, 1)
 	go func() {
@@ -77,11 +88,13 @@ func (m *AuthServiceManager) Run(ctx context.Context, cfg RuntimeConfig, paths R
 	if err := waitForAuthServiceHealth(ctx, cfg.AuthService.Port, authServiceHealthTimeout, waitErr); err != nil {
 		_ = cmd.Process.Kill()
 		_ = os.Remove(paths.AuthServicePIDFile)
+		unregisterLocalProcess(paths, authServiceProcessName, cmd.Process.Pid)
 		return err
 	}
 
-	err := <-waitErr
+	err = <-waitErr
 	_ = os.Remove(paths.AuthServicePIDFile)
+	unregisterLocalProcess(paths, authServiceProcessName, cmd.Process.Pid)
 	if ctx.Err() != nil {
 		return nil
 	}
@@ -113,9 +126,8 @@ func (m *AuthServiceManager) Down(ctx context.Context, cfg RuntimeConfig, paths 
 		_ = os.Remove(paths.AuthServicePIDFile)
 		return nil
 	}
-	if err := proc.Signal(os.Interrupt); err != nil {
-		_ = proc.Kill()
-	}
+	_ = proc
+	_ = interruptProcess(pid)
 
 	deadline := time.NewTimer(10 * time.Second)
 	defer deadline.Stop()
@@ -124,10 +136,10 @@ func (m *AuthServiceManager) Down(ctx context.Context, cfg RuntimeConfig, paths 
 	for {
 		select {
 		case <-ctx.Done():
-			_ = proc.Kill()
+			_ = forceStopManagedProcess(paths, authServiceProcessName, pid)
 			return ctx.Err()
 		case <-deadline.C:
-			_ = proc.Kill()
+			_ = forceStopManagedProcess(paths, authServiceProcessName, pid)
 			_ = os.Remove(paths.AuthServicePIDFile)
 			return nil
 		case <-ticker.C:
@@ -141,6 +153,12 @@ func (m *AuthServiceManager) Down(ctx context.Context, cfg RuntimeConfig, paths 
 
 func (m *AuthServiceManager) preparePythonEnv(ctx context.Context, cfg RuntimeConfig, paths RuntimePaths) error {
 	python := authServicePythonPath(paths)
+	if cfg.Profile == "desktop" {
+		if info, err := os.Stat(python); err == nil && !info.IsDir() {
+			return nil
+		}
+		return fmt.Errorf("desktop auth-service Python not found: %s", python)
+	}
 	if _, err := os.Stat(python); err != nil {
 		if err := m.createPythonEnv(ctx, cfg, paths); err != nil {
 			return err
@@ -167,56 +185,90 @@ func (m *AuthServiceManager) preparePythonEnv(ctx context.Context, cfg RuntimeCo
 }
 
 func (m *AuthServiceManager) createPythonEnv(ctx context.Context, cfg RuntimeConfig, paths RuntimePaths) error {
-	uv := envText(authServiceUVEnvVar, "uv")
+	python, err := ensureLocalPythonRuntime(ctx, m.runner, paths, cfg.AuthService.PythonVersion)
+	if err != nil {
+		return err
+	}
+	uv, ok := uvCommand()
+	if !ok {
+		return fmt.Errorf("uv is required to create auth-service venv; install uv or set %s", authServiceUVEnvVar)
+	}
 	res, runErr := m.runner.Run(ctx, Command{
 		Name: uv,
-		Args: []string{"venv", "--python", cfg.AuthService.Python, paths.AuthServiceVenvDir},
+		Args: localPythonVenvArgs(python, false, paths.AuthServiceVenvDir),
 		Dir:  paths.RepoRoot,
-	})
-	if runErr == nil {
-		return nil
-	}
-	uvErr := fmt.Sprintf("%v (%s)", runErr, strings.TrimSpace(res.Stderr))
-
-	res, runErr = m.runner.Run(ctx, Command{
-		Name: cfg.AuthService.Python,
-		Args: []string{"-m", "venv", paths.AuthServiceVenvDir},
-		Dir:  paths.RepoRoot,
+		Env:  pythonRuntimeEnv(paths),
 	})
 	if runErr != nil {
-		return fmt.Errorf("create auth-service venv failed: uv: %s; python venv: %w (%s)", uvErr, runErr, strings.TrimSpace(res.Stderr))
+		return fmt.Errorf("create auth-service venv failed: %w (%s)", runErr, strings.TrimSpace(res.Stderr))
 	}
 	return nil
 }
 
 func (m *AuthServiceManager) installRequirements(ctx context.Context, paths RuntimePaths, python string, requirements string) error {
-	uv := envText(authServiceUVEnvVar, "uv")
+	uv, ok := uvCommand()
+	if !ok {
+		return fmt.Errorf("uv is required to install auth-service requirements; install uv or set %s", authServiceUVEnvVar)
+	}
 	res, runErr := m.runner.Run(ctx, Command{
 		Name: uv,
-		Args: []string{"pip", "install", "--python", python, "-r", requirements},
+		Args: localPythonPipInstallArgs(python, "-r", requirements),
 		Dir:  paths.RepoRoot,
+		Env:  pythonRuntimeEnv(paths),
 	})
 	if runErr == nil {
 		return nil
 	}
-	uvErr := fmt.Sprintf("%v (%s)", runErr, strings.TrimSpace(res.Stderr))
+	return fmt.Errorf("install auth-service requirements failed: %w (%s)", runErr, strings.TrimSpace(res.Stderr))
+}
 
-	res, runErr = m.runner.Run(ctx, Command{
-		Name: python,
-		Args: []string{"-m", "pip", "install", "-r", requirements},
+func (m *AuthServiceManager) generateAPIPermissions(ctx context.Context, paths RuntimePaths) error {
+	output := authServicePermissionsPath(paths)
+	script := filepath.Join(paths.RepoRoot, "backend", "scripts", "extract_api_permissions.py")
+	sources := []string{
+		filepath.Join(paths.RepoRoot, "backend", "core"),
+		filepath.Join(paths.RepoRoot, "backend", "auth-service"),
+		filepath.Join(paths.RepoRoot, "backend", "scan-control-plane"),
+	}
+	args := []string{
+		script,
+		"--output", output,
+		"--exclude", "scripts,core,vendor",
+	}
+	args = append(args, sources...)
+	res, runErr := m.runner.Run(ctx, Command{
+		Name: authServicePythonPath(paths),
+		Args: args,
 		Dir:  paths.RepoRoot,
+		Env:  pythonRuntimeEnv(paths),
 	})
 	if runErr != nil {
-		return fmt.Errorf("install auth-service requirements failed: uv: %s; pip: %w (%s)", uvErr, runErr, strings.TrimSpace(res.Stderr))
+		return fmt.Errorf("generate auth-service API permissions failed: %w (%s)", runErr, strings.TrimSpace(res.Stderr))
+	}
+	info, err := os.Stat(output)
+	if err != nil {
+		return fmt.Errorf("generate auth-service API permissions output file error: %w", err)
+	}
+	if info.IsDir() {
+		return fmt.Errorf("generate auth-service API permissions output path %s is a directory", output)
 	}
 	return nil
 }
 
+func authServicePermissionsPath(paths RuntimePaths) string {
+	return filepath.Join(paths.GeneratedDir, "auth-api-permissions.json")
+}
+
 func authServicePythonPath(paths RuntimePaths) string {
-	if runtime.GOOS == "windows" {
-		return filepath.Join(paths.AuthServiceVenvDir, "Scripts", "python.exe")
-	}
-	return filepath.Join(paths.AuthServiceVenvDir, "bin", "python")
+	return venvExecutable(paths.AuthServiceVenvDir, "python")
+}
+
+func pythonDependencyCacheEnv(paths RuntimePaths) []string {
+	hostCache := defaultHostCacheDir(hostHomeDir())
+	return append(hostToolEnv(paths),
+		"UV_CACHE_DIR="+cleanHostCacheEnv("UV_CACHE_DIR", paths, filepath.Join(hostCache, "uv")),
+		"PIP_CACHE_DIR="+cleanHostCacheEnv("PIP_CACHE_DIR", paths, filepath.Join(hostCache, "pip")),
+	)
 }
 
 func authServiceEnv(cfg RuntimeConfig, paths RuntimePaths) []string {
@@ -235,6 +287,7 @@ func authServiceEnv(cfg RuntimeConfig, paths RuntimePaths) []string {
 		"LAZYMIND_BOOTSTRAP_ADMIN_PASSWORD=" + envText("LAZYMIND_BOOTSTRAP_ADMIN_PASSWORD", "admin"),
 		"LAZYMIND_MODEL_CONFIG_PATH=" + envText("LAZYMIND_MODEL_CONFIG_PATH", "dynamic"),
 		"LAZYMIND_CHAT_UNLIKE_SWITCH=" + envText("LAZYMIND_CHAT_UNLIKE_SWITCH", "true"),
+		authServicePermissionsEnvVar + "=" + authServicePermissionsPath(paths),
 		authServiceOpenAPIExportEnvVar + "=0",
 	}
 }

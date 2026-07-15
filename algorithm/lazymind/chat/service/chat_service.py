@@ -171,6 +171,14 @@ def _build_ask_user_tool() -> list:
     return [ask_user]
 
 
+def _should_register_ask_user(agentic_config: Dict[str, Any]) -> bool:
+    """Auto plugin sessions are mechanically non-interactive."""
+    return not (
+        agentic_config.get('enable_plugin', True)
+        and agentic_config.get('plugin_mode') == 'auto'
+    )
+
+
 def _build_schedule_tools() -> list:
     """Return a lazy ToolGroup dict for all schedule management tools.
 
@@ -344,6 +352,12 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
     personalization = request.personalization
     agent = request.agent
     plugin = request.plugin
+    from lazymind.chat.plugin.plugin_manager import (
+        _build_chat_agent_task_context,
+        guard_plugin_agent_stream,
+        is_plugin_driver_turn,
+        resolve_plugin_injection,
+    )
 
     conversation_id = (conversation.conversation_id or '').strip()
     user_id = (conversation.user_id or '').strip()
@@ -362,7 +376,8 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
     start_time = time.time()
     priority = runtime.priority or LAZYMIND_LLM_PRIORITY
     query, agent_query = _normalize_cite_message_query_for_agent(message.query)
-    sensitive_word = check_sensitive_content(query)
+    is_driver_turn = is_plugin_driver_turn(plugin.plugin_context)
+    sensitive_word = None if is_driver_turn else check_sensitive_content(query)
     if sensitive_word:
         cost = round(time.time() - start_time, 3)
         LOG.warning(
@@ -379,7 +394,6 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
             },
             cost,
         ), final_data={'tool_call_turns': 0})
-
     filters = dict(retrieval.filters or {})
     files_map: Dict[str, List[str]] = message.files if isinstance(message.files, dict) else {}
     flat_files: List[str] = []
@@ -399,8 +413,15 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
         'filters': filters if RAG_MODE and filters else {},
         'files': resolved_files,
         'history_files_per_turn': files_map,
+        'databases': retrieval.databases or [],
+        'dataset': retrieval.dataset,
         'local_fs_sources': retrieval.local_fs_sources or [],
         'priority': priority,
+        'llm_config': runtime.llm_config or {},
+        'tool_config': runtime.tool_config or {},
+        'ocr_config': runtime.ocr_config or {},
+        'mcp_config': runtime.mcp_config or [],
+        'environment_context': runtime.environment_context or {},
         'user_id': user_id or '',
         'use_memory': personalization.use_memory,
         'citation_state': translator.citation_state,
@@ -444,10 +465,6 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
         else:
             display_files.append(name)
 
-    from lazymind.chat.plugin.plugin_manager import (
-        resolve_plugin_injection,
-        _build_chat_agent_task_context,
-    )
     # Register the active session so the cancel endpoint can find it by conversation_id.
     _conv_id_key = conversation_id  # already stripped above
     if _conv_id_key:
@@ -460,7 +477,8 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
     lazyllm.globals['agentic_config'] = agentic_config
 
     plugin_tools, plugin_system_prompt, plugin_stop_tools, agentic_config_patch, plugin_artifact_context = \
-        resolve_plugin_injection(plugin.plugin_context, conversation_id=conversation_id)
+        resolve_plugin_injection(plugin.plugin_context, conversation_id=conversation_id, plugin_catalog=plugin.catalog,
+                                 disabled_builtin_plugins=plugin.disabled_builtin_plugins)
     agentic_config.update(agentic_config_patch)
 
     # Inject SubAgent task context into the system prompt independently of plugin state.
@@ -519,7 +537,10 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
     schedule_tools = _build_schedule_tools()
     # ask_user is a ChatAgent-only stop-tool. It is NOT in DEFAULT_TOOLS so SubAgents
     # (whose tool resolution falls back to DEFAULT_TOOLS) never see it.
-    ask_user_tools = _build_ask_user_tool()
+    # Auto plugin mode is non-interactive by contract: ask_user must be absent,
+    # not merely discouraged by prompt text.
+    allow_ask_user = _should_register_ask_user(agentic_config)
+    ask_user_tools = _build_ask_user_tool() if allow_ask_user else []
     all_tools = (agent_tools + subagent_tools + attachment_tools
                  + schedule_tools + ask_user_tools + plugin_tools + mcp_tools)
     set_trace_context({
@@ -537,6 +558,8 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
         user_preference=personalization.user_preference,
         memory=personalization.memory,
         files=display_files,
+        current_query=query,
+        conversation_history=agent_history,
     )
     if plugin_system_prompt:
         runtime_prompt = runtime_prompt + '\n\n' + plugin_system_prompt
@@ -557,7 +580,7 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
     # ask_user is always a stop-tool for ChatAgent regardless of plugin state.
     # Merge it with any plugin-level stop tools (e.g. advance_step_and_hand_off).
     stop_tools = list(plugin_stop_tools) if plugin_stop_tools else []
-    if 'ask_user' not in stop_tools:
+    if allow_ask_user and 'ask_user' not in stop_tools:
         stop_tools.append('ask_user')
     react_agent.set_stop_tools(stop_tools)
 
@@ -566,25 +589,28 @@ async def handle_chat(request: ChatRequest) -> Union[Dict[str, Any], StreamingRe
 
         try:
             async with rag_sem:
-                async for kind, payload in drive_agent(react_agent, agent_query, history=agent_history):
+                initial_agent_stream = drive_agent(
+                    react_agent, agent_query, history=agent_history,
+                )
+                guarded_agent_stream = guard_plugin_agent_stream(
+                    initial_agent_stream,
+                    all_tools=all_tools,
+                    query=query,
+                    runtime_prompt=runtime_prompt,
+                    agent=agent,
+                    runtime_config=_cfg,
+                    fs=FS,
+                    stop_tools=stop_tools,
+                    history=agent_history,
+                )
+                async for kind, payload in guarded_agent_stream:
                     if kind == 'event':
-                        event_tag = payload.get('tag', '') if isinstance(payload, dict) else ''
-                        if event_tag in ('tool_calls', 'tool_results'):
-                            LOG.info(
-                                f'[ChatServer] [DBG_AGENT_EVENT] [sid={conversation.session_id}] '
-                                f'[tag={event_tag}] [payload={payload}]'
-                            )
                         for frame in translator.feed(payload):
                             cost = round(time.time() - start_time, 3)
                             yield log_and_emit_frame(frame, cost, query, conversation.session_id, tag='FEED')
                     else:
                         # 'final' -- payload is already the resolved result value;
                         # if future.result() raised, drive_agent propagated it before yielding.
-                        LOG.info(
-                            f'[ChatServer] [DBG_AGENT_FINAL] [sid={conversation.session_id}] '
-                            f'[tool_call_turns={translator.tool_call_turns}] '
-                            f'[result_type={type(payload).__name__}] [result={str(payload)[:200]}]'
-                        )
                         final_result = payload
 
             for frame in translator.finish(final_result):
