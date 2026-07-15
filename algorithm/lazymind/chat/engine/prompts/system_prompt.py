@@ -258,7 +258,7 @@ def build_system_prompt(
         prompt_parts.append(SEARCH_GUIDANCE)
         prompt_parts.append(KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE)
     if active_groups & _CLOUD_DOCUMENT_SEARCH_GROUPS:
-        prompt_parts.append(_CLOUD_DOCUMENT_SEARCH_GUIDANCE)
+        prompt_parts.append(CLOUD_DOCUMENT_SEARCH_GUIDANCE)
     if 'web_search' in active_groups:
         prompt_parts.append(WEB_SEARCH_GUIDANCE)
     if (
