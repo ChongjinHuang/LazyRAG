@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { StepNode } from '../core/model';
 import './index.scss';
 
@@ -27,8 +28,7 @@ export function serializeScenario(steps: StepNode[], data: ScenarioData): string
       const desc = data.stepDescriptions[step.id] ?? '';
       lines.push(`### ${step.id}（${step.label}）`, '', desc.trim() || '（暂无描述）', '');
     }
-  }
-  if (data.notes.trim()) {
+  }  if (data.notes.trim()) {
     lines.push('## 注意事项', '', data.notes.trim(), '');
   }
   return lines.join('\n');
@@ -38,13 +38,16 @@ export function parseScenario(markdown: string, steps: StepNode[]): ScenarioData
   const data: ScenarioData = { overview: '', stepDescriptions: {}, notes: '' };
   if (!markdown) return data;
 
+  let foundStructuredSection = false;
   const sections = markdown.split(/^##\s+/m).filter(Boolean);
   for (const section of sections) {
     const [header, ...bodyLines] = section.split('\n');
     const body = bodyLines.join('\n').trim();
     if (header.includes('场景描述')) {
+      foundStructuredSection = true;
       data.overview = body;
     } else if (header.includes('工作流程')) {
+      foundStructuredSection = true;
       const stepBlocks = body.split(/^###\s+/m).filter(Boolean);
       for (const block of stepBlocks) {
         const [stepHeader, ...stepBodyLines] = block.split('\n');
@@ -53,6 +56,7 @@ export function parseScenario(markdown: string, steps: StepNode[]): ScenarioData
         if (stepId) data.stepDescriptions[stepId] = stepBody === '（暂无描述）' ? '' : stepBody;
       }
     } else if (header.includes('注意事项')) {
+      foundStructuredSection = true;
       data.notes = body;
     }
   }
@@ -62,6 +66,15 @@ export function parseScenario(markdown: string, steps: StepNode[]): ScenarioData
       data.stepDescriptions[step.id] = '';
     }
   }
+
+  // Fallback only when there were no recognized sections at all. A valid
+  // generated scenario whose fields are empty still has structured headings
+  // and placeholder descriptions; treating that document as free-form overview
+  // makes every subsequent serialization append another complete workflow.
+  if (!foundStructuredSection && markdown.trim()) {
+    data.overview = markdown.trim();
+  }
+
   return data;
 }
 
@@ -70,6 +83,7 @@ export function parseScenario(markdown: string, steps: StepNode[]): ScenarioData
  * Overview and notes are edited via PluginInfoModal (场景说明 tab).
  */
 export default function ScenarioEditor({ steps, value, onChange }: Props) {
+  const { t } = useTranslation();
   const [localStepDescs, setLocalStepDescs] = useState<Record<string, string>>(value.stepDescriptions);
 
   // Sync step descriptions when steps change
@@ -90,7 +104,7 @@ export default function ScenarioEditor({ steps, value, onChange }: Props) {
   return (
     <div className="scenario-editor">
       {steps.length === 0 ? (
-        <p className="se-empty-hint">请先在画布中添加步骤，在步骤属性面板填写步骤说明</p>
+        <p className="se-empty-hint">{t('selfEvolutionRun.scenarioEditorEmptyHint')}</p>
       ) : (
         <div className="se-steps-table">
           {steps.map((step) => (
@@ -103,7 +117,7 @@ export default function ScenarioEditor({ steps, value, onChange }: Props) {
                 className="se-step-desc-input"
                 value={localStepDescs[step.id] ?? ''}
                 onChange={(e) => updateStepDesc(step.id, e.target.value)}
-                placeholder="描述该步骤的作用…"
+                placeholder={t('selfEvolutionRun.scenarioStepDescPlaceholder')}
               />
             </div>
           ))}

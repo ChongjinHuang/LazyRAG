@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Button, message, Tooltip } from 'antd';
 import ReactMarkdown from 'react-markdown';
+import { useTranslation } from 'react-i18next';
 import { isDeveloperModeActive } from '@/utils/developerMode';
 import {
   CheckCircleOutlined,
@@ -9,9 +10,10 @@ import {
   AppstoreOutlined,
   SettingOutlined,
   FileOutlined,
+  ToolOutlined,
 } from '@ant-design/icons';
 import type { GraphModel } from './core/model';
-import { createEmptyModel } from './core/model';
+import { createEmptyModel, expressionMaterials, VIRTUAL_START } from './core/model';
 import { parseYaml } from './core/parser';
 import { serializeModel } from './core/serializer';
 import { validateStateGraph } from './core/validator';
@@ -33,8 +35,8 @@ import './index.scss';
 
 // content tab: which "view" is active
 type ContentTab = 'statemachine' | 'ui' | 'scenario';
-// view mode: preview or code
-type ViewMode = 'preview' | 'code';
+// view mode: preview, code, or brief (AI design brief)
+type ViewMode = 'preview' | 'code' | 'brief';
 type SaveStatus = 'idle' | 'pending' | 'saving' | 'saved' | 'error';
 
 // code file derived from tab
@@ -48,6 +50,8 @@ function codeFileForTab(tab: ContentTab): CodeFile {
 }
 
 const AUTO_SAVE_DELAY_MS = 1500;
+
+export type RepairTarget = 'statemachine' | 'ui' | 'scenario' | 'scripts' | 'full';
 
 export interface SavePayload {
   stateYaml: string;
@@ -66,13 +70,35 @@ interface Props {
   initialScriptsContent?: string;
   /** Plugin name shown in breadcrumb area (managed by parent) */
   pluginName?: React.ReactNode;
+  topbarExtra?: React.ReactNode;
+  topbarActions?: React.ReactNode;
   /** Called automatically when any file changes (auto-save). */
   onSave?: (payload: SavePayload) => Promise<void>;
+  /** Runs Go's authoritative editor-profile validation after a successful save. */
+  onValidate?: () => Promise<ValidationError[]>;
   onClose?: () => void;
   /** When false, the empty-canvas hint is suppressed (user already has experience). */
   showEmptyHint?: boolean;
   /** When true, all editing is disabled. onSave is ignored and all inputs become read-only. */
   readonly?: boolean;
+  /**
+   * Initial visibility of the artifacts panel. Defaults to true.
+   * Pass false to keep the panel collapsed on remount (e.g. user closed it before a repair).
+   */
+  defaultShowArtifacts?: boolean;
+  /** Called when the artifacts panel is opened or closed. Parent can persist this. */
+  onArtifactsChange?: (show: boolean) => void;
+  /**
+   * When provided, an "AI 修复" button appears in the toolbar of each content tab.
+   * `target` indicates which part the user wants to repair.
+   * `validationErrors` carries the current graph validation errors (only for 'statemachine' target).
+   */
+  onRepair?: (target: RepairTarget, validationErrors?: ValidationError[]) => void;
+  /**
+   * When provided, a "草稿" button appears in the view-mode capsule.
+   * Clicking it shows the design brief content rendered as pre-formatted text.
+   */
+  designBriefContent?: string;
 }
 
 function parseScriptFiles(raw: string): Record<string, string> {
@@ -81,6 +107,28 @@ function parseScriptFiles(raw: string): Record<string, string> {
     if (typeof parsed === 'object' && parsed !== null) return parsed as Record<string, string>;
   } catch {}
   return {};
+}
+
+function validationTargetNode(error: ValidationError, model: GraphModel): string | null {
+  if (error.nodeId && (error.nodeId === VIRTUAL_START || model.nodes.some((node) => node.id === error.nodeId))) {
+    return error.nodeId;
+  }
+  if (error.edgeKey) {
+    const source = error.edgeKey.split('->')[0];
+    if (source === VIRTUAL_START || model.nodes.some((node) => node.id === source)) return source;
+  }
+  if (error.materialId) {
+    const related = model.nodes.find((node) => {
+      const materials = [
+        ...node.inputs.flatMap((input) => [input.material, ...(input.alternatives ?? [])]),
+        ...node.outputs.map((output) => output.material),
+        ...expressionMaterials(node.skipIf),
+      ];
+      return materials.includes(error.materialId!);
+    });
+    return related?.id ?? null;
+  }
+  return null;
 }
 
 /**
@@ -99,6 +147,7 @@ function initGraphModel(stateYaml: string | undefined, pluginYaml: string | unde
           id: s.id, type: s.type, label: s.label,
           cardinality: s.cardinality, ordered: s.ordered,
           allow_manual_add: s.allow_manual_add, summary_max_chars: s.summary_max_chars,
+          external: s.external,
         };
       }
     }
@@ -112,17 +161,36 @@ export default function StateGraphEditor({
   initialScenarioContent,
   initialScriptsContent,
   pluginName,
+  topbarExtra,
+  topbarActions,
   onSave,
+  onValidate,
   onClose,
   showEmptyHint = true,
   readonly = false,
+  defaultShowArtifacts = false,
+  onRepair,
+  onArtifactsChange,
+  designBriefContent,
 }: Props) {
+  const { t } = useTranslation();
   const [contentTab, setContentTab] = useState<ContentTab>('statemachine');
   const [viewMode, setViewMode] = useState<ViewMode>('preview');
   // In code mode, the active file is tracked independently of contentTab
   const [activeCodeFile, setActiveCodeFile] = useState<CodeFile>('state.yml');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
-  const [showArtifacts, setShowArtifacts] = useState(true);
+  const [showArtifacts, setShowArtifacts] = useState(defaultShowArtifacts);
+  const toggleArtifacts = useCallback(() => {
+    setShowArtifacts((v) => {
+      const next = !v;
+      onArtifactsChange?.(next);
+      return next;
+    });
+  }, [onArtifactsChange]);
+  const closeArtifacts = useCallback(() => {
+    setShowArtifacts(false);
+    onArtifactsChange?.(false);
+  }, [onArtifactsChange]);
   const [pluginInfoOpen, setPluginInfoOpen] = useState(false);
   // Active UI tab — lifted from UiEditorPanel so TabBar removal doesn't lose state
   const [uiActiveTabId, setUiActiveTabId] = useState<string | undefined>(undefined);
@@ -133,14 +201,28 @@ export default function StateGraphEditor({
   const editorRootRef = useRef<HTMLDivElement>(null);
 
   // plugin.yaml model — must be initialized before GraphModel so we can back-fill slots.
-  const [pluginModel, setPluginModel] = useState<PluginModel>(() =>
-    initialPluginYaml ? (parsePluginYaml(initialPluginYaml) ?? createEmptyPluginModel()) : createEmptyPluginModel(),
-  );
+  const [pluginModel, setPluginModel] = useState<PluginModel>(() => {
+    const parsedPlugin = initialPluginYaml
+      ? (parsePluginYaml(initialPluginYaml) ?? createEmptyPluginModel())
+      : createEmptyPluginModel();
+    // state.yml is authoritative for the editable step list. Older/generated
+    // drafts can have a populated state machine but no plugin.yaml `steps`
+    // block; do not let the next auto-save serialize that omission back to disk.
+    const graph = initialStateYaml ? parseYaml(initialStateYaml) : null;
+    return graph
+      ? { ...parsedPlugin, steps: graph.nodes.map((node) => ({ id: node.id, label: node.label })) }
+      : parsedPlugin;
+  });
 
   // state.yml model — back-fill slots from plugin.yaml when state.yml has none (post-migration drafts).
   const modelRef = useRef<GraphModel>(initGraphModel(initialStateYaml, initialPluginYaml));
   const [model, setModelState] = useState<GraphModel>(modelRef.current);
   const [errors, setErrors] = useState<ValidationError[]>(() => validateStateGraph(modelRef.current));
+  const [authoritativeErrors, setAuthoritativeErrors] = useState<ValidationError[]>([]);
+  const displayErrors = useMemo(() => [
+    ...errors.filter((local) => !authoritativeErrors.some((server) => server.code === local.code)),
+    ...authoritativeErrors,
+  ], [errors, authoritativeErrors]);
 
   // scenario data
   const [scenarioData, setScenarioData] = useState<ScenarioData>(() =>
@@ -160,6 +242,33 @@ export default function StateGraphEditor({
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onSaveRef = useRef(onSave);
   useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+  const onValidateRef = useRef(onValidate);
+  useEffect(() => { onValidateRef.current = onValidate; }, [onValidate]);
+  const validationRequestRef = useRef(0);
+
+  const runAuthoritativeValidation = useCallback(async () => {
+    const validate = onValidateRef.current;
+    if (!validate) return;
+    const requestId = ++validationRequestRef.current;
+    try {
+      const nextErrors = await validate();
+      if (validationRequestRef.current === requestId) {
+        setAuthoritativeErrors(nextErrors);
+      }
+    } catch {
+      // A validation transport failure must not turn a successful save into a
+      // save failure or erase the last known diagnostics.
+    }
+  }, []);
+
+  // The Go validator is authoritative. Load its diagnostics as soon as an
+  // editable draft opens instead of waiting for the first user modification.
+  useEffect(() => {
+    if (!readonly) void runAuthoritativeValidation();
+    return () => {
+      validationRequestRef.current += 1;
+    };
+  }, [readonly, runAuthoritativeValidation]);
 
   const buildPayload = useCallback((m: GraphModel, pm: PluginModel, sd: ScenarioData, sc: string): SavePayload => ({
     stateYaml: serializeModel(m, false),
@@ -180,11 +289,14 @@ export default function StateGraphEditor({
     try {
       await fn(buildPayload(m, pm, sd, sc));
       setSaveStatus('saved');
-    } catch {
+      await runAuthoritativeValidation();
+    } catch (error: unknown) {
       setSaveStatus('error');
-      message.error('保存失败，请重试');
+      if (!(error as { isSaveConflict?: boolean })?.isSaveConflict) {
+        message.error(t('selfEvolutionRun.sgeSaveFailed'));
+      }
     }
-  }, [buildPayload]);
+  }, [buildPayload, runAuthoritativeValidation]);
 
   const triggerAutoSave = useCallback((m: GraphModel, pm: PluginModel, sd: ScenarioData, sc: string) => {
     if (!onSaveRef.current) return;
@@ -235,16 +347,25 @@ export default function StateGraphEditor({
     setModelState(nextModel);
     setErrors(validateStateGraph(nextModel));
 
-    // Keep pluginModel.slots in sync with graphModel.slots.
+    // Keep pluginModel step metadata and slots in sync with GraphModel.
+    // A node rename must update plugin.yaml in the same auto-save; otherwise
+    // the server correctly reports that the renamed state step is undeclared.
     // ArtifactPanel writes new slots only into GraphModel; syncing back here
     // ensures handlePluginModelChange never overwrites them with stale data.
-    if (nextModel.slots !== prev.slots) {
+    const stepsChanged = nextModel.nodes !== prev.nodes;
+    const slotsChanged = nextModel.slots !== prev.slots;
+    if (stepsChanged || slotsChanged) {
       const syncedSlots: import('./core/pluginModel').PluginSlotDef[] = Object.values(nextModel.slots).map((s) => ({
         id: s.id, type: s.type as import('./core/pluginModel').PluginSlotDef['type'],
         label: s.label, cardinality: s.cardinality, ordered: s.ordered,
         allow_manual_add: s.allow_manual_add, summary_max_chars: s.summary_max_chars,
+        external: s.external,
       }));
-      const syncedPm = { ...pluginModelRef.current, slots: syncedSlots };
+      const syncedPm = {
+        ...pluginModelRef.current,
+        steps: nextModel.nodes.map((node) => ({ id: node.id, label: node.label })),
+        slots: syncedSlots,
+      };
       pluginModelRef.current = syncedPm;
       setPluginModel(syncedPm);
     }
@@ -279,10 +400,10 @@ export default function StateGraphEditor({
         setErrors(validateStateGraph(mergedModel));
         triggerAutoSave(mergedModel, pluginModelRef.current, scenarioDataRef.current, scriptsContentRef.current);
       } else {
-        setErrors([{ code: 'V10_YAML_SYNTAX', message: 'YAML 语法错误，请检查格式' }]);
+        setErrors([{ code: 'V10_YAML_SYNTAX', message: t('selfEvolutionRun.sgeYamlSyntaxError') }]);
       }
     }, 500);
-  }, [triggerAutoSave]);
+  }, [triggerAutoSave, t]);
 
   const handlePluginModelChange = useCallback((pm: PluginModel) => {
     setPluginModel(pm);
@@ -296,6 +417,7 @@ export default function StateGraphEditor({
         id: s.id, type: s.type, label: s.label,
         cardinality: s.cardinality, ordered: s.ordered,
         allow_manual_add: s.allow_manual_add, summary_max_chars: s.summary_max_chars,
+        external: s.external,
       };
     }
     const updatedModel = { ...modelRef.current, slots };
@@ -322,6 +444,7 @@ export default function StateGraphEditor({
           id: s.id, type: s.type, label: s.label,
           cardinality: s.cardinality, ordered: s.ordered,
           allow_manual_add: s.allow_manual_add, summary_max_chars: s.summary_max_chars,
+          external: s.external,
         };
       }
       const updatedModel: GraphModel = { ...modelRef.current, slots };
@@ -336,7 +459,7 @@ export default function StateGraphEditor({
       setErrors((prev) => {
         const alreadyHas = prev.some((e) => e.code === 'V10_PLUGIN_YAML_SYNTAX');
         if (alreadyHas) return prev;
-        return [...prev, { code: 'V10_PLUGIN_YAML_SYNTAX', message: 'plugin.yaml 语法错误，请检查格式' }];
+        return [...prev, { code: 'V10_PLUGIN_YAML_SYNTAX', message: t('selfEvolutionRun.sgePluginYamlSyntaxError') }];
       });
     }
   }, [triggerAutoSave]);
@@ -362,9 +485,10 @@ export default function StateGraphEditor({
   }, [handlePluginModelChange, handleScenarioChange, doSave]);
 
   const handleAddNode = useCallback(() => { canvasRef.current?.addNode(); }, []);
-  const handleSelectNode = useCallback(() => {
+  const handleSelectNode = useCallback((nodeId: string) => {
     setViewMode('preview');
     setContentTab('statemachine');
+    requestAnimationFrame(() => canvasRef.current?.focusNode(nodeId));
   }, []);
 
   // Switch to code mode, initialize activeCodeFile from current tab
@@ -417,12 +541,12 @@ export default function StateGraphEditor({
 
 
   return (
-    <div ref={editorRootRef} className="state-graph-editor" aria-label="插件编辑器">
+    <div ref={editorRootRef} className="state-graph-editor" aria-label={t('selfEvolutionRun.sgeEditorAriaLabel')}>
       {/* ── Row 1: back/breadcrumb left, save status + plugin config right ── */}
       <div className="sge-topbar">
         <div className="sge-topbar-left">
           {onClose && (
-            <button className="sge-back-btn" onClick={onClose} aria-label="返回">
+            <button className="sge-back-btn" onClick={onClose} aria-label={t('selfEvolutionRun.sgeBackAriaLabel')}>
               ←
             </button>
           )}
@@ -431,16 +555,18 @@ export default function StateGraphEditor({
         <div className="sge-topbar-right">
           {!readonly && onSave && (
             <span className="sge-autosave-status">
-              {saveStatus === 'pending' && <span className="sge-autosave-pending">待保存…</span>}
-              {saveStatus === 'saving' && <span className="sge-autosave-saving"><LoadingOutlined /> 保存中…</span>}
-              {saveStatus === 'saved' && <span className="sge-autosave-saved"><CheckCircleOutlined /> 已保存</span>}
-              {saveStatus === 'error' && <span className="sge-autosave-error">保存失败</span>}
+              {saveStatus === 'pending' && <span className="sge-autosave-pending">{t('selfEvolutionRun.sgeSavePending')}</span>}
+              {saveStatus === 'saving' && <span className="sge-autosave-saving"><LoadingOutlined /> {t('selfEvolutionRun.sgeSaving')}</span>}
+              {saveStatus === 'saved' && <span className="sge-autosave-saved"><CheckCircleOutlined /> {t('selfEvolutionRun.sgeSaved')}</span>}
+              {saveStatus === 'error' && <span className="sge-autosave-error">{t('selfEvolutionRun.sgeSaveError')}</span>}
             </span>
           )}
-          {readonly && <span className="sge-readonly-badge">只读</span>}
+          {readonly && <span className="sge-readonly-badge">{t('selfEvolutionRun.sgeReadonlyBadge')}</span>}
+          {topbarExtra}
           <Button size="small" icon={<SettingOutlined />} onClick={() => setPluginInfoOpen(true)}>
-            插件配置
+            {t('selfEvolutionRun.sgePluginConfigBtn')}
           </Button>
+          {topbarActions}
         </div>
       </div>
 
@@ -452,17 +578,17 @@ export default function StateGraphEditor({
             {(['statemachine', 'ui', 'scenario'] as ContentTab[]).map((tab) => (
               <button
                 key={tab}
-                className={`sge-seg-btn${contentTab === tab ? ' sge-seg-btn--active' : ''}${viewMode === 'code' ? ' sge-seg-btn--disabled' : ''}`}
-                onClick={() => { if (viewMode !== 'code') setContentTab(tab); }}
-                disabled={viewMode === 'code'}
-                aria-disabled={viewMode === 'code'}
+                className={`sge-seg-btn${contentTab === tab ? ' sge-seg-btn--active' : ''}${(viewMode === 'code' || viewMode === 'brief') ? ' sge-seg-btn--disabled' : ''}`}
+                onClick={() => { if (viewMode !== 'code' && viewMode !== 'brief') setContentTab(tab); }}
+                disabled={viewMode === 'code' || viewMode === 'brief'}
+                aria-disabled={viewMode === 'code' || viewMode === 'brief'}
               >
-                {tab === 'statemachine' ? '流程图' : tab === 'ui' ? 'UI' : '说明文档'}
+                {tab === 'statemachine' ? t('selfEvolutionRun.sgeTabStatemachine') : tab === 'ui' ? t('selfEvolutionRun.sgeTabUi') : t('selfEvolutionRun.sgeTabScenario')}
               </button>
             ))}
           </div>
           <Tooltip
-            title="流程图定义任务的执行过程，每一步会产生一些素材；UI只定义这些素材如何组织和展示，不参与和展示流程的执行过程"
+            title={t('selfEvolutionRun.sgeTabHelpTooltip')}
             placement="bottom"
           >
             <span className="sge-tab-help-icon">?</span>
@@ -474,29 +600,42 @@ export default function StateGraphEditor({
               className={`sge-seg-btn${viewMode === 'preview' ? ' sge-seg-btn--active' : ''}`}
               onClick={handleExitCode}
             >
-              预览
+              {t('selfEvolutionRun.sgeViewPreview')}
             </button>
             <button
               className={`sge-seg-btn${viewMode === 'code' ? ' sge-seg-btn--active' : ''}`}
               onClick={handleEnterCode}
             >
-              代码
+              {t('selfEvolutionRun.sgeViewCode')}
             </button>
+            {designBriefContent && (
+              <button
+                className={`sge-seg-btn${viewMode === 'brief' ? ' sge-seg-btn--active' : ''}`}
+                onClick={() => setViewMode('brief')}
+              >
+                {t('selfEvolutionRun.sgeViewBrief')}
+              </button>
+            )}
           </div>
         </div>
         <div className="sge-toolbar2-right">
           {!readonly && contentTab === 'statemachine' && viewMode === 'preview' && (
             <>
+              {onRepair && (
+                <Button size="small" icon={<ToolOutlined />} onClick={() => onRepair('statemachine', displayErrors)}>
+                  {t('selfEvolutionRun.sgeAiRepairBtn')}
+                </Button>
+              )}
               <Button
                 size="small"
                 icon={<AppstoreOutlined />}
-                onClick={() => setShowArtifacts((v) => !v)}
+                onClick={() => toggleArtifacts()}
                 type={showArtifacts ? 'primary' : 'default'}
               >
-                素材{slotCount > 0 && <span className="sge-artifact-count">{slotCount}</span>}
+                {t('selfEvolutionRun.sgeArtifactsBtn')}{slotCount > 0 && <span className="sge-artifact-count">{slotCount}</span>}
               </Button>
               <Button size="small" icon={<PlusOutlined />} onClick={handleAddNode}>
-                添加步骤
+                {t('selfEvolutionRun.sgeAddStepBtn')}
               </Button>
             </>
           )}
@@ -504,10 +643,20 @@ export default function StateGraphEditor({
             <Button
               size="small"
               icon={<AppstoreOutlined />}
-              onClick={() => setShowArtifacts((v) => !v)}
+              onClick={() => toggleArtifacts()}
               type={showArtifacts ? 'primary' : 'default'}
             >
-              素材{slotCount > 0 && <span className="sge-artifact-count">{slotCount}</span>}
+              {t('selfEvolutionRun.sgeArtifactsBtn')}{slotCount > 0 && <span className="sge-artifact-count">{slotCount}</span>}
+            </Button>
+          )}
+          {!readonly && contentTab === 'ui' && viewMode === 'preview' && onRepair && (
+            <Button size="small" icon={<ToolOutlined />} onClick={() => onRepair('ui')}>
+              {t('selfEvolutionRun.sgeAiRepairBtn')}
+            </Button>
+          )}
+          {!readonly && contentTab === 'scenario' && viewMode === 'preview' && onRepair && (
+            <Button size="small" icon={<ToolOutlined />} onClick={() => onRepair('scenario')}>
+              {t('selfEvolutionRun.sgeAiRepairBtn')}
             </Button>
           )}
         </div>
@@ -520,7 +669,7 @@ export default function StateGraphEditor({
             <div className="sge-content">
               <GraphCanvas
                 model={model}
-                errors={errors}
+                errors={displayErrors}
                 onModelChange={readonly ? () => {} : updateModel}
                 pluginModel={pluginModel}
                 scenarioData={scenarioData}
@@ -531,26 +680,30 @@ export default function StateGraphEditor({
               {model.nodes.length === 0 && showEmptyHint && (
                 <div className="sge-empty-state" aria-hidden="true">
                   <div className="sge-empty-state-content">
-                    <p className="sge-empty-state-title">用流程图描述你的工作</p>
+                    <p className="sge-empty-state-title">{t('selfEvolutionRun.sgeEmptyStateTitle')}</p>
                     <ol className="sge-empty-state-list">
-                      <li>点击「添加步骤」创建一个步骤，每个步骤代表一个执行环节</li>
-                      <li>点击「素材」定义步骤间传递的内容，如文字、图片、文件等</li>
-                      <li>拖拽步骤上的连接点来连接各步骤，表示执行顺序</li>
+                      <li>{t('selfEvolutionRun.sgeEmptyStateStep1')}</li>
+                      <li>{t('selfEvolutionRun.sgeEmptyStateStep2')}</li>
+                      <li>{t('selfEvolutionRun.sgeEmptyStateStep3')}</li>
                     </ol>
-                    <p className="sge-empty-state-hint">也可以双击画布空白处快速添加步骤 · 添加第一个步骤后提示消失</p>
+                    <p className="sge-empty-state-hint">{t('selfEvolutionRun.sgeEmptyStateHint')}</p>
                   </div>
                 </div>
               )}
               {showArtifacts && (
                 <ArtifactPanel
                   model={model}
-                  onClose={() => setShowArtifacts(false)}
+                  onClose={() => closeArtifacts()}
                   onModelChange={readonly ? () => {} : updateModelFromUpdater}
                   readonly={readonly}
                 />
               )}
             </div>
-            <ValidationPanel errors={errors} onSelectNode={handleSelectNode} />
+            <ValidationPanel
+              errors={displayErrors}
+              getTargetNodeId={(error) => validationTargetNode(error, model)}
+              onSelectNode={handleSelectNode}
+            />
           </div>
         )}
 
@@ -579,7 +732,7 @@ export default function StateGraphEditor({
             {/* Left: file tree */}
             <div className="sge-code-sidebar">
               <div className="sge-code-sidebar-section">
-                <span className="sge-code-sidebar-label">核心文件</span>
+                <span className="sge-code-sidebar-label">{t('selfEvolutionRun.sgeCodeSidebarCore')}</span>
                 {coreFiles.map((file) => (
                   <div
                     key={file}
@@ -593,7 +746,7 @@ export default function StateGraphEditor({
               </div>
               {scriptFilePaths.length > 0 && (
                 <div className="sge-code-sidebar-section">
-                  <span className="sge-code-sidebar-label">脚本文件</span>
+                <span className="sge-code-sidebar-label">{t('selfEvolutionRun.sgeCodeSidebarScript')}</span>
                   {scriptFilePaths.map((path) => (
                     <div
                       key={path}
@@ -610,7 +763,7 @@ export default function StateGraphEditor({
               )}
               {devMode && (
                 <div className="sge-code-sidebar-section">
-                  <span className="sge-code-sidebar-label sge-code-sidebar-label--dev">调试</span>
+                  <span className="sge-code-sidebar-label sge-code-sidebar-label--dev">{t('selfEvolutionRun.sgeCodeSidebarDebug')}</span>
                   <div
                     className={`sge-code-file-item${activeCodeFile === 'layout.json' ? ' sge-code-file-item--active' : ''}`}
                     onClick={() => setActiveCodeFile('layout.json')}
@@ -639,7 +792,7 @@ export default function StateGraphEditor({
                     handleScriptsChange(activeCodeFile, text);
                   }
                 }}
-                errors={activeCodeFile === 'state.yml' ? errors : []}
+                errors={activeCodeFile === 'state.yml' ? displayErrors : []}
                 readOnly={readonly || activeCodeFile === 'layout.json'}
                 language={
                   activeCodeFile.endsWith('.md')
@@ -650,6 +803,12 @@ export default function StateGraphEditor({
                 }
               />
             </div>
+          </div>
+        )}
+
+        {viewMode === 'brief' && designBriefContent && (
+          <div className="sge-brief-preview">
+            <pre className="sge-brief-content">{designBriefContent}</pre>
           </div>
         )}
       </div>

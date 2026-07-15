@@ -30,6 +30,24 @@ function parseIntentText(raw?: string): string {
   }
 }
 
+/** Fallback: read latest selected text from a slot artifact. */
+function parseSelectedSlotText(session: PluginSession, slotKey: string, includeUnselected = false): string {
+  const candidates = (session.slots ?? [])
+    .filter((s) => s.slot === slotKey && (includeUnselected || s.selected))
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  const latest = candidates[0];
+  if (!latest) return '';
+  const raw = latest.artifact_value;
+  if (raw === null || raw === undefined) return '';
+  if (typeof raw === 'string') return raw;
+  if (typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>;
+    if (obj.text !== undefined) return String(obj.text);
+    if (obj.value !== undefined) return String(obj.value);
+  }
+  return String(raw);
+}
+
 /** Latest _source_tool among selected image slots (newest first). */
 function getLatestSelectedImageSourceTool(session: PluginSession): string {
   const selectedImageSlots = (session.slots ?? []).filter(
@@ -56,7 +74,9 @@ function IntentPopover({
 }) {
   const { t } = useTranslation();
   const wrapRef = useRef<HTMLDivElement>(null);
-  const globalText = parseIntentText(session.intent_context);
+  const globalText =
+    parseIntentText(session.intent_context)
+    || parseSelectedSlotText(session, 'user_intent_summary', true);
   const stepIntents = (session.steps ?? [])
     .filter((s) => !!parseIntentText(s.intent_context))
     .map((s, idx) => ({
@@ -134,10 +154,11 @@ function AutoSlotGrid({
   onRefresh?: () => void;
   onReference?: (slot: SlotRevision) => void;
 }) {
+  const { t } = useTranslation();
   if (!session.slots || session.slots.length === 0) {
     return (
       <div className='plugin-panel__empty' role='status' aria-live='polite'>
-        <span>Waiting for results…</span>
+        <span>{t('chat.pluginWaitingForResults')}</span>
       </div>
     );
   }
@@ -412,6 +433,7 @@ function CompositeSlotGrid({
   onReference?: (slot: SlotRevision) => void;
   onFocusSortOrder?: (sortOrder: number | undefined) => void;
 }) {
+  const { t } = useTranslation();
   const rows = getCompositeRows(tab, session);
   const columns = buildColumns(tab);
 
@@ -421,7 +443,7 @@ function CompositeSlotGrid({
   if (rows.length === 0) {
     return (
       <div className='plugin-panel__empty' role='status' aria-live='polite'>
-        <span>Waiting for results…</span>
+        <span>{t('chat.pluginWaitingForResults')}</span>
       </div>
     );
   }
@@ -435,7 +457,7 @@ function CompositeSlotGrid({
           onClick={() => onFocusSortOrder?.(sortOrder)}
           role='button'
           tabIndex={0}
-          aria-label={`行 ${sortOrder}`}
+          aria-label={t('chat.pluginRowAria', { index: sortOrder })}
         >
           {columns.map((col, colIdx) => {
             const flexBasis = `${(col.weight / totalWeight) * 100}%`;
@@ -668,7 +690,7 @@ function SortableImageList({
               onClick={() => onFocusSortOrder?.(rev.sort_order)}
               role='button'
               tabIndex={0}
-              aria-label={`图片 ${listIndex}`}
+              aria-label={t('chat.pluginImageAria', { index: listIndex })}
               className={`plugin-panel__image-list-item${dragSrcIdx.current === idx ? ' plugin-panel__image-list-item--dragging' : ''}`}
             >
               <SlotRenderer
@@ -695,8 +717,8 @@ function SortableImageList({
         <button
           className='plugin-panel__image-add-card'
           onClick={onAddItem}
-          title='新增附件'
-          aria-label='新增附件'
+          title={t('chat.pluginAddAttachment')}
+          aria-label={t('chat.pluginAddAttachment')}
           type='button'
         >
           <span className='plugin-panel__image-add-card-icon'>+</span>
@@ -850,7 +872,7 @@ function TabSlotGrid({
                   onClick={() => onFocusSortOrder?.(rev.sort_order)}
                   role='button'
                   tabIndex={0}
-                  aria-label={`内容项 ${rev.sort_order ?? ''}`}
+                  aria-label={t('chat.pluginContentItemAria', { index: rev.sort_order ?? '' })}
                 >
                   <SlotRenderer
                     slot={rev}
@@ -894,7 +916,6 @@ export function PluginPanel({
   const [activeTabIdx, setActiveTabIdx] = React.useState(0);
   const [collapsed, setCollapsed] = useState(false);
   const fetchPluginUI = usePluginStore((s) => s.fetchPluginUI);
-  const pluginUIByPlugin = usePluginStore((s) => s.pluginUIByPlugin);
   const setFocusedTab = usePluginStore((s) => s.setFocusedTab);
   const setFocusedSortOrder = usePluginStore((s) => s.setFocusedSortOrder);
   // Focused tab id mirrored out of the session so polling refreshes don't
@@ -934,11 +955,14 @@ export function PluginPanel({
 
   useEffect(() => {
     if (!session?.plugin_id) return;
-    const lang = i18n.language || "";
-    const cached = pluginUIByPlugin[`${session.plugin_id}:${lang}`];
-    if (cached) { setUI(cached); return; }
+    const lang = i18n.language || '';
+    const cached = usePluginStore.getState().pluginUIByPlugin[`${session.plugin_id}:${lang}`];
+    if (cached) {
+      setUI(cached);
+    }
+    // Always re-fetch once to avoid stale cached tab/slot layouts after plugin.yaml updates.
     fetchPluginUI(session.plugin_id).then(setUI);
-  }, [session?.plugin_id, fetchPluginUI, pluginUIByPlugin, i18n.language]);
+  }, [session?.plugin_id, fetchPluginUI, i18n.language]);
 
   // Restore the previously focused tab when UI loads.
   useEffect(() => {
@@ -970,7 +994,7 @@ export function PluginPanel({
       <div
         className='plugin-panel plugin-panel--loading'
         role='status'
-        aria-label='Loading plugin panel'
+        aria-label={t('chat.pluginPanelLoading')}
       />
     );
   }
@@ -979,9 +1003,6 @@ export function PluginPanel({
 
   const tabs: TabDef[] = ui.tabs ?? [];
   const hasTabs = tabs.length > 0;
-
-  // Always show the intent button when a session exists.
-  // When no intent has been recorded yet the popover shows empty sections.
   const hasIntent = true;
 
   const showActions =
@@ -996,9 +1017,16 @@ export function PluginPanel({
   // A failed step cannot be checkpoint-resumed — the SubAgent exited uncleanly and there is
   // no valid checkpoint to restore. Only "重试" (full restart) is meaningful in this case.
   // Note: "interrupted" steps CAN be resumed via checkpoint, so only "failed" is blocked.
-  const currentStepStatus = session.steps
-    ?.filter((s) => s.step_id === session.current_step_id)
-    ?.sort((a, b) => b.attempt - a.attempt)[0]?.status;
+  const authoritativeCurrent = session.projection?.current ?? [];
+  const currentStepStatus = authoritativeCurrent
+    .map((id) => session.projection?.nodes?.[id]?.execution)
+    .find((status) => status === 'failed')
+    ?? (session.current_step_id
+      ? session.steps
+        ?.filter((s) => s.step_id === session.current_step_id && s.validity !== 'stale')
+        ?.sort((a, b) => b.attempt - a.attempt)[0]?.status
+      : undefined);
+  const effectivePast = new Set(session.projection?.past ?? []);
   const continueDisabled = buttonsDisabled || currentStepStatus === 'failed';
 
   function handleContinue() {
@@ -1021,7 +1049,7 @@ export function PluginPanel({
     <div
       className={`plugin-panel plugin-panel--${displayStatus}${collapsed ? ' plugin-panel--collapsed' : ''}`}
       data-session-id={session.session_id}
-      aria-label='Plugin Panel'
+      aria-label={t('chat.pluginPanelTitle')}
     >
       {/* Header */}
       <div className='plugin-panel__header'>
@@ -1029,10 +1057,10 @@ export function PluginPanel({
           <span className='plugin-panel__title'>{session.plugin_id}</span>
           <span
             className={`plugin-panel__status plugin-panel__status--${displayStatus}`}
-            aria-label={`Status: ${t(STATUS_KEY[displayStatus] ?? displayStatus)}`}
+            aria-label={t('chat.pluginStatusAria', { status: t(STATUS_KEY[displayStatus] ?? displayStatus) })}
             onClick={() => session && setStateGraphOpen(true)}
             style={{ cursor: 'pointer' }}
-            title='查看工作流图'
+            title={t('chat.pluginViewWorkflow')}
             role='button'
             tabIndex={0}
             onKeyDown={(e) => e.key === 'Enter' && session && setStateGraphOpen(true)}
@@ -1178,7 +1206,7 @@ export function PluginPanel({
 
       {/* Footer */}
       {!collapsed && showActions && (
-        <div className='plugin-panel__footer' role='group' aria-label='Session controls'>
+        <div className='plugin-panel__footer' role='group' aria-label={t('chat.pluginSessionControls')}>
           {displayStatus === 'active' && onStop && (
             <button
               type='button'
@@ -1223,7 +1251,11 @@ export function PluginPanel({
             <div style={{ flex: '1 1 100%', display: 'flex', flexDirection: 'column', gap: 6 }}>
               <span style={{ fontSize: 12, color: '#6b7280', fontWeight: 500 }}>{t('chat.pluginRollbackLabel')}</span>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                {session.steps.map((step) => (
+                {session.steps
+                  .filter((step, index, all) => effectivePast.has(step.step_id)
+                    && step.validity !== 'stale'
+                    && all.findIndex((candidate) => candidate.step_id === step.step_id && candidate.validity !== 'stale') === index)
+                  .map((step) => (
                   <button
                     key={`${step.step_id}-${step.attempt}`}
                     type='button'

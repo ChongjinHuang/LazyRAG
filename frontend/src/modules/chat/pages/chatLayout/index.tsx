@@ -58,7 +58,7 @@ interface IChatLayoutProps {
 }
 
 const ChatLayout: FC<IChatLayoutProps> = (props) => {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const {
     setIsChatContent,
     initchatConfig,
@@ -157,6 +157,13 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
   const hasPluginSession = usePluginStore((s) =>
     sessionId ? (s.sessionByConversation[sessionId] ?? null) !== null : false,
   );
+  const pluginDefinitionChanged = usePluginStore((s) =>
+    sessionId
+      ? s.sessionByConversation[sessionId]?.runtime_error_code ===
+        "PLUGIN_DEFINITION_CHANGED"
+      : false,
+  );
+  const chatEnabled = canChat && !pluginDefinitionChanged;
 
   // When the user changes KB selection during an active plugin session, persist it on the
   // conversation so analyze_subject KB prefetch inherits filters.kb_id.
@@ -420,13 +427,15 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
             tags: chatConfig?.tags,
           },
         },
-        models: ["LazyMind 大模型"],
+        models: [t("chat.lazyMindModel")],
         // enable_thinking: think ? true : false,
         stream: true,
         input,
         mode: "auto",
         create_time: new Date().toISOString(),
-        environment_context: buildEnvironmentContext(),
+        environment_context: buildEnvironmentContext(
+          i18n.resolvedLanguage || i18n.language,
+        ),
         ...(pluginContext ? { plugin_context: pluginContext } : {}),
         ...(pluginUIState ? { plugin_ui_state: pluginUIState } : {}),
         ...(artifactRefs.length > 0 ? { artifact_refs: artifactRefs } : {}),
@@ -553,6 +562,11 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
       }
       const conversationId = detail.conversationId || "";
       if (!conversationId) {
+        if (sessionIdRef.current) {
+          chatRef.current?.disconnectConversationStream?.(sessionIdRef.current, {
+            persistResumeKey: true,
+          });
+        }
         setIsRestoringConversation(false);
         setConversationPluginSettings(undefined);
         setChatConfig({});
@@ -562,6 +576,11 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
       }
       if (conversationId === sessionId) {
         return;
+      }
+      if (sessionIdRef.current) {
+        chatRef.current?.disconnectConversationStream?.(sessionIdRef.current, {
+          persistResumeKey: true,
+        });
       }
       setIsChatContent(true);
       loadConversation(conversationId);
@@ -668,7 +687,7 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
       )}
       <ChatContainerComponent
         ref={chatRef}
-        canChat={canChat}
+        canChat={chatEnabled}
         initialCard={isRestoringConversation ? null : <InitialCard />}
         sessionId={sessionId}
         onOpenSSE={onOpenSSE}
@@ -693,9 +712,19 @@ const ChatLayout: FC<IChatLayoutProps> = (props) => {
         embeddingReady={embeddingReady}
         multimodalEmbeddingReady={multimodalEmbeddingReady}
         rerankReady={rerankReady}
-        disabledReason={autoRunning ? t("chat.autoAdvanceRunning") : chatDisabledReason}
-        disabledDescription={autoRunning ? undefined : chatDisabledDescription}
-        disabledAction={autoRunning ? undefined : chatDisabledAction}
+        disabledReason={
+          pluginDefinitionChanged
+            ? t("chat.pluginDefinitionChanged")
+            : autoRunning
+              ? t("chat.autoAdvanceRunning")
+              : chatDisabledReason
+        }
+        disabledDescription={
+          autoRunning || pluginDefinitionChanged ? undefined : chatDisabledDescription
+        }
+        disabledAction={
+          autoRunning || pluginDefinitionChanged ? undefined : chatDisabledAction
+        }
       />
       {tasks.length > 0 && isTaskPanelCollapsed && (
         <button

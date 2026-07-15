@@ -11,38 +11,38 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 )
 
 type RuntimeManager struct {
-	runner          CommandRunner
-	execPath        string
-	now             func() time.Time
-	out             io.Writer
-	errOut          io.Writer
-	probeAPI        func(port int, timeout time.Duration) bool
-	probeLocalProxy func(port int, timeout time.Duration) bool
-	probeFrontend   func(port int, timeout time.Duration) bool
-	probeAuth       func(port int, timeout time.Duration) bool
-	probeCore       func(port int, timeout time.Duration) bool
-	probeScan       func(port int, timeout time.Duration) bool
-	probeFileWatch  func(port int, timeout time.Duration) bool
-	waitHostReady   func(context.Context, RuntimeConfig) error
-	runtimeReady    func(context.Context, RuntimeConfig, RuntimePaths) bool
-	processScanner  localProcessScanner
-	pollInterval    time.Duration
-	upTimeout       time.Duration
-	downTimeout     time.Duration
-	processCompose  *ProcessComposeManager
-	localProxy      *LocalProxyManager
-	authService     *AuthServiceManager
-	coreService     *CoreServiceManager
-	scanControl     *ScanControlPlaneManager
-	fileWatcher     *FileWatcherManager
-	frontend        *FrontendManager
-	algorithm       *AlgorithmServiceManager
-	milvusLite      *MilvusLiteManager
+	runner                    CommandRunner
+	execPath                  string
+	now                       func() time.Time
+	out                       io.Writer
+	errOut                    io.Writer
+	probeAPI                  func(port int, timeout time.Duration) bool
+	probeLocalProxy           func(port int, timeout time.Duration) bool
+	probeFrontend             func(port int, timeout time.Duration) bool
+	probeAuth                 func(port int, timeout time.Duration) bool
+	probeCore                 func(port int, timeout time.Duration) bool
+	probeScan                 func(port int, timeout time.Duration) bool
+	probeFileWatch            func(port int, timeout time.Duration) bool
+	waitHostReady             func(context.Context, RuntimeConfig) error
+	runtimeReady              func(context.Context, RuntimeConfig, RuntimePaths) bool
+	processScanner            localProcessScanner
+	pollInterval              time.Duration
+	upTimeout                 time.Duration
+	downTimeout               time.Duration
+	processComposeDownTimeout time.Duration
+	processCompose            *ProcessComposeManager
+	localProxy                *LocalProxyManager
+	authService               *AuthServiceManager
+	coreService               *CoreServiceManager
+	scanControl               *ScanControlPlaneManager
+	fileWatcher               *FileWatcherManager
+	frontend                  *FrontendManager
+	algorithm                 *AlgorithmServiceManager
+	milvusLite                *MilvusLiteManager
 }
 
 const startupProgressInterval = 10 * time.Second
@@ -50,33 +50,34 @@ const startupProgressInterval = 10 * time.Second
 func NewRuntimeManager(r CommandRunner, execPath string) *RuntimeManager {
 	processCompose := NewProcessComposeManager(r, execPath)
 	return &RuntimeManager{
-		runner:          r,
-		execPath:        execPath,
-		now:             time.Now,
-		out:             io.Discard,
-		errOut:          io.Discard,
-		probeAPI:        processCompose.ProbeAPI,
-		probeLocalProxy: localProxyHealthAlive,
-		probeFrontend:   frontendHealthAlive,
-		probeAuth:       authServiceHealthAlive,
-		probeCore:       coreServiceHealthAlive,
-		probeScan:       scanControlPlaneHealthAlive,
-		probeFileWatch:  fileWatcherHealthAlive,
-		waitHostReady:   waitForHostAlgorithmReadiness,
-		runtimeReady:    nil,
-		processScanner:  scanLocalRuntimeProcesses,
-		pollInterval:    2 * time.Second,
-		upTimeout:       envDuration(localUpTimeoutEnvVar, time.Duration(defaultLocalUpTimeout)*time.Second),
-		downTimeout:     envDuration(localDownTimeoutEnvVar, time.Duration(defaultLocalDownTimeout)*time.Second),
-		processCompose:  processCompose,
-		localProxy:      NewLocalProxyManager(r),
-		authService:     NewAuthServiceManager(r),
-		coreService:     NewCoreServiceManager(r),
-		scanControl:     NewScanControlPlaneManager(r),
-		fileWatcher:     NewFileWatcherManager(r),
-		frontend:        NewFrontendManager(r),
-		algorithm:       NewAlgorithmServiceManager(r),
-		milvusLite:      NewMilvusLiteManager(r),
+		runner:                    r,
+		execPath:                  execPath,
+		now:                       time.Now,
+		out:                       io.Discard,
+		errOut:                    io.Discard,
+		probeAPI:                  processCompose.ProbeAPI,
+		probeLocalProxy:           localProxyHealthAlive,
+		probeFrontend:             frontendHealthAlive,
+		probeAuth:                 authServiceHealthAlive,
+		probeCore:                 coreServiceHealthAlive,
+		probeScan:                 scanControlPlaneHealthAlive,
+		probeFileWatch:            fileWatcherHealthAlive,
+		waitHostReady:             waitForHostAlgorithmReadiness,
+		runtimeReady:              nil,
+		processScanner:            scanLocalRuntimeProcesses,
+		pollInterval:              2 * time.Second,
+		upTimeout:                 envDuration(localUpTimeoutEnvVar, time.Duration(defaultLocalUpTimeout)*time.Second),
+		downTimeout:               envDuration(localDownTimeoutEnvVar, time.Duration(defaultLocalDownTimeout)*time.Second),
+		processComposeDownTimeout: envDuration(processComposeDownTimeoutEnvVar, time.Duration(defaultProcessComposeDownTimeout)*time.Second),
+		processCompose:            processCompose,
+		localProxy:                NewLocalProxyManager(r),
+		authService:               NewAuthServiceManager(r),
+		coreService:               NewCoreServiceManager(r),
+		scanControl:               NewScanControlPlaneManager(r),
+		fileWatcher:               NewFileWatcherManager(r),
+		frontend:                  NewFrontendManager(r),
+		algorithm:                 NewAlgorithmServiceManager(r),
+		milvusLite:                NewMilvusLiteManager(r),
 	}
 }
 
@@ -104,8 +105,14 @@ func randomHexToken() (string, error) {
 }
 
 func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths RuntimePaths) error {
+	if err := validateRequestedRuntimeOwner(cfg); err != nil {
+		return err
+	}
 	freshCfg := cfg
-	if err := paths.EnsureAllDirs(); err != nil {
+	if err := ensureRuntimeDirs(cfg, paths); err != nil {
+		return err
+	}
+	if err := relocateDesktopPythonVenvs(cfg, paths); err != nil {
 		return err
 	}
 	state, err := readOrNewState(paths, cfg)
@@ -113,6 +120,11 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 		return err
 	}
 	stateCfg := applyStateConfig(freshCfg, state)
+	if claimsRuntimeRunning(state) && state.ProcessCompose.APIPort > 0 && m.probeAPI(state.ProcessCompose.APIPort, 500*time.Millisecond) {
+		if err := activeRuntimeOwnershipError(state, cfg); err != nil {
+			return err
+		}
+	}
 	if m.isExistingRuntimeRunning(ctx, state, stateCfg, paths) {
 		return m.reportExistingRuntime(ctx, state, paths)
 	}
@@ -122,11 +134,17 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 	if err := m.killStaleRuntimeProcesses(ctx, cfg, paths); err != nil {
 		return err
 	}
-	freshCfg, paths, err = NewRuntimeConfig("", paths.RepoRoot)
+	freshCfg, paths, err = NewRuntimeConfigWithOptions(RuntimeConfigOptions{
+		Profile:       cfg.Profile,
+		OwnerToken:    cfg.OwnerToken,
+		RepoRoot:      paths.RepoRoot,
+		RuntimeRoot:   cfg.RuntimeRoot,
+		ResourcesRoot: cfg.ResourcesRoot,
+	})
 	if err != nil {
 		return err
 	}
-	if err := paths.EnsureAllDirs(); err != nil {
+	if err := ensureRuntimeDirs(freshCfg, paths); err != nil {
 		return err
 	}
 
@@ -141,6 +159,11 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 		return err
 	}
 	stateCfg = applyStateConfig(freshCfg, state)
+	if claimsRuntimeRunning(state) && state.ProcessCompose.APIPort > 0 && m.probeAPI(state.ProcessCompose.APIPort, 500*time.Millisecond) {
+		if err := activeRuntimeOwnershipError(state, cfg); err != nil {
+			return err
+		}
+	}
 	if m.isExistingRuntimeRunning(ctx, state, stateCfg, paths) {
 		return m.reportExistingRuntime(ctx, state, paths)
 	}
@@ -150,11 +173,17 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 	if err := m.killStaleRuntimeProcesses(ctx, stateCfg, paths); err != nil {
 		return err
 	}
-	freshCfg, paths, err = NewRuntimeConfig("", paths.RepoRoot)
+	freshCfg, paths, err = NewRuntimeConfigWithOptions(RuntimeConfigOptions{
+		Profile:       cfg.Profile,
+		OwnerToken:    cfg.OwnerToken,
+		RepoRoot:      paths.RepoRoot,
+		RuntimeRoot:   cfg.RuntimeRoot,
+		ResourcesRoot: cfg.ResourcesRoot,
+	})
 	if err != nil {
 		return err
 	}
-	if err := paths.EnsureAllDirs(); err != nil {
+	if err := ensureRuntimeDirs(freshCfg, paths); err != nil {
 		return err
 	}
 	cfg = freshCfg
@@ -165,7 +194,7 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 	if err := writeServiceEndpointFiles(paths, serviceEndpointsFromConfig(cfg)); err != nil {
 		return err
 	}
-	if err := ensureLazyLLMSubmodule(ctx, m.runner, paths.RepoRoot); err != nil {
+	if err := ensureLazyLLMSource(ctx, m.runner, paths.RepoRoot, cfg.Profile); err != nil {
 		return err
 	}
 
@@ -191,7 +220,9 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 	}
 
 	state.Profile = cfg.Profile
+	state.OwnerToken = cfg.OwnerToken
 	state.RepoRoot = cfg.RepoRoot
+	state.ResourcesRoot = cfg.ResourcesRoot
 	state.RuntimeRoot = cfg.RuntimeRoot
 	state.ProcessCompose.APIPort = cfg.ProcessComposePort
 	state.ProcessCompose.APIRoot = "http://127.0.0.1:" + strconv.Itoa(cfg.ProcessComposePort)
@@ -286,7 +317,37 @@ func (m *RuntimeManager) Up(ctx context.Context, cfg RuntimeConfig, paths Runtim
 		return err
 	}
 	m.printReadySummary(cfg)
+	if cfg.Profile == "desktop" {
+		return m.waitForDesktopRuntimeStop(ctx, paths)
+	}
 	return nil
+}
+
+func ensureRuntimeDirs(cfg RuntimeConfig, paths RuntimePaths) error {
+	if err := paths.EnsureAllDirs(); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(cfg.FileWatcher.WatchHostDir, 0o755); err != nil {
+		return fmt.Errorf("create local document scan directory: %w", err)
+	}
+	return nil
+}
+
+func (m *RuntimeManager) waitForDesktopRuntimeStop(ctx context.Context, paths RuntimePaths) error {
+	m.progressf("desktop runtime monitor active")
+	ticker := time.NewTicker(m.pollInterval)
+	defer ticker.Stop()
+	for {
+		state, err := readRuntimeState(paths.StateFile)
+		if err == nil && (state.OverallStatus == "stopped" || state.OverallStatus == "failed") {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
+	}
 }
 
 func (m *RuntimeManager) waitForAuthServiceHealthy(ctx context.Context, port int, timeout time.Duration, pidFile string) error {
@@ -442,12 +503,25 @@ func frontendHealthAlive(port int, timeout time.Duration) bool {
 }
 
 func (m *RuntimeManager) Down(ctx context.Context, cfg RuntimeConfig, paths RuntimePaths) error {
+	if err := validateRequestedRuntimeOwner(cfg); err != nil {
+		return err
+	}
 	if err := paths.EnsureAllDirs(); err != nil {
 		return err
 	}
 	state, err := readOrNewState(paths, cfg)
 	if err != nil {
 		return err
+	}
+	if err := activeRuntimeOwnershipError(state, cfg); err != nil {
+		active := claimsRuntimeRunning(state) ||
+			(state.ProcessCompose.APIPort > 0 && m.probeAPI(state.ProcessCompose.APIPort, 500*time.Millisecond)) ||
+			processComposeSupervisorAlive(paths)
+		if active {
+			return err
+		}
+		m.progressf("runtime state belongs to another profile or instance; skipping shutdown")
+		return nil
 	}
 	cfg = applyStateConfig(cfg, state)
 	if state.ProcessCompose.APIPort > 0 {
@@ -457,8 +531,9 @@ func (m *RuntimeManager) Down(ctx context.Context, cfg RuntimeConfig, paths Runt
 	apiAlive := m.probeAPI(cfg.ProcessComposePort, 500*time.Millisecond)
 	fallbackCleanup := !apiAlive
 	if apiAlive {
-		m.progressf("stopping process-compose on 127.0.0.1:%d (timeout %s)", cfg.ProcessComposePort, m.downTimeout)
-		downCtx, cancel := context.WithTimeout(ctx, m.downTimeout)
+		processComposeTimeout := m.effectiveProcessComposeDownTimeout()
+		m.progressf("stopping process-compose on 127.0.0.1:%d (timeout %s)", cfg.ProcessComposePort, processComposeTimeout)
+		downCtx, cancel := context.WithTimeout(ctx, processComposeTimeout)
 		defer cancel()
 		downErr = m.processComposeDownWithProgress(downCtx, cfg, paths)
 		fallbackCleanup = downErr != nil
@@ -559,24 +634,63 @@ func (m *RuntimeManager) processComposeDownWithProgress(ctx context.Context, cfg
 	go func() {
 		errCh <- m.processCompose.Down(ctx, cfg, paths, m.out, m.errOut)
 	}()
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(1 * time.Second)
 	defer ticker.Stop()
+	nextReport := m.now().Add(5 * time.Second)
 	for {
 		select {
 		case err := <-errCh:
 			return err
 		case <-ticker.C:
-			m.progressf("still waiting for process-compose down on 127.0.0.1:%d; service logs: %s", cfg.ProcessComposePort, displayPath(paths.RepoRoot, paths.LogsDir))
+			apiAlive := cfg.ProcessComposePort > 0 && m.probeAPI(cfg.ProcessComposePort, 500*time.Millisecond)
+			supervisorAlive := processComposeSupervisorAlive(paths)
+			if !apiAlive && !supervisorAlive {
+				m.progressf("process-compose supervisor stopped on 127.0.0.1:%d", cfg.ProcessComposePort)
+				return nil
+			}
+			if !m.now().Before(nextReport) {
+				m.progressf(
+					"still waiting for process-compose down on 127.0.0.1:%d: api=%s supervisor=%s; service logs: %s",
+					cfg.ProcessComposePort,
+					aliveLabel(apiAlive),
+					aliveLabel(supervisorAlive),
+					displayPath(paths.RepoRoot, paths.LogsDir),
+				)
+				nextReport = m.now().Add(5 * time.Second)
+			}
 		case <-ctx.Done():
 			m.progressf("process-compose down timed out on 127.0.0.1:%d; switching to fallback cleanup", cfg.ProcessComposePort)
 			select {
 			case err := <-errCh:
 				return err
-			case <-time.After(5 * time.Second):
+			case <-time.After(1 * time.Second):
 				return ctx.Err()
 			}
 		}
 	}
+}
+
+func processComposeSupervisorAlive(paths RuntimePaths) bool {
+	pid, err := readPIDFile(paths.ProcessComposePIDFile)
+	return err == nil && pid > 0 && processAlive(pid)
+}
+
+func aliveLabel(alive bool) string {
+	if alive {
+		return "alive"
+	}
+	return "stopped"
+}
+
+func (m *RuntimeManager) effectiveProcessComposeDownTimeout() time.Duration {
+	timeout := m.processComposeDownTimeout
+	if timeout <= 0 {
+		timeout = time.Duration(defaultProcessComposeDownTimeout) * time.Second
+	}
+	if m.downTimeout > 0 && timeout > m.downTimeout {
+		return m.downTimeout
+	}
+	return timeout
 }
 
 func (m *RuntimeManager) isExistingRuntimeRunning(ctx context.Context, state RuntimeState, cfg RuntimeConfig, paths RuntimePaths) bool {
@@ -631,22 +745,20 @@ func (m *RuntimeManager) stopProcessComposeSupervisor(ctx context.Context, paths
 		_ = os.Remove(paths.ProcessComposePIDFile)
 		return nil
 	}
-	if err := signalProcessGroup(pid, syscall.SIGINT); err != nil {
+	if err := stopSupervisorProcess(pid); err != nil {
 		_ = proc.Signal(os.Interrupt)
 	}
-	deadline := time.NewTimer(5 * time.Second)
+	deadline := time.NewTimer(3 * time.Second)
 	defer deadline.Stop()
 	ticker := time.NewTicker(250 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
-			_ = signalProcessGroup(pid, syscall.SIGKILL)
-			_ = proc.Kill()
+			_ = forceKillProcessTree(pid)
 			return ctx.Err()
 		case <-deadline.C:
-			_ = signalProcessGroup(pid, syscall.SIGKILL)
-			_ = proc.Kill()
+			_ = forceKillProcessTree(pid)
 			_ = os.Remove(paths.ProcessComposePIDFile)
 			return nil
 		case <-ticker.C:
@@ -786,7 +898,7 @@ func (m *RuntimeManager) printReadySummary(cfg RuntimeConfig) {
 			_, _ = fmt.Fprintf(m.out, "frontend LAN: http://%s:%d\n", ip, cfg.FrontendPort)
 		}
 	}
-	_, _ = fmt.Fprintf(m.out, "status: .lazymind-local/bin/local-runtime-manager status --json\n")
+	_, _ = fmt.Fprintf(m.out, "status: local-runtime-manager status --json\n")
 }
 
 func (m *RuntimeManager) printPortResolutionSummary(cfg RuntimeConfig) {
@@ -944,14 +1056,7 @@ func upLockProcessAlive(lockFile string) (bool, error) {
 	if err != nil || pid <= 0 {
 		return false, nil
 	}
-	err = syscall.Kill(pid, 0)
-	if err == nil || err == syscall.EPERM {
-		return true, nil
-	}
-	if err == syscall.ESRCH {
-		return false, nil
-	}
-	return true, err
+	return processAlive(pid), nil
 }
 
 func envDuration(name string, fallback time.Duration) time.Duration {
@@ -981,17 +1086,26 @@ func (m *RuntimeManager) Status(ctx context.Context, cfg RuntimeConfig, paths Ru
 	if state.RepoRoot == "" {
 		state.RepoRoot = cfg.RepoRoot
 	}
+	if state.ResourcesRoot == "" {
+		state.ResourcesRoot = cfg.ResourcesRoot
+	}
 	if state.RuntimeRoot == "" {
 		state.RuntimeRoot = cfg.RuntimeRoot
 	}
 
 	resp := StatusResponse{
-		Runtime:        "local",
+		Runtime:        state.Profile,
 		Profile:        state.Profile,
+		OwnerMatched:   cfg.Profile == "desktop" && cfg.OwnerToken != "" && cfg.OwnerToken == state.OwnerToken,
 		OverallStatus:  state.OverallStatus,
 		RepoRoot:       state.RepoRoot,
+		ResourcesRoot:  state.ResourcesRoot,
+		BuildRoot:      cfg.BuildRoot,
 		RuntimeRoot:    state.RuntimeRoot,
+		DataDir:        paths.DataDir,
+		LogsDir:        paths.LogsDir,
 		ProcessCompose: state.ProcessCompose,
+		Config:         snapshotRuntimeConfig(cfg),
 		Services:       state.Services,
 	}
 	if resp.Services == nil {
@@ -1115,18 +1229,27 @@ func (m *RuntimeManager) Status(ctx context.Context, cfg RuntimeConfig, paths Ru
 			resp.OverallStatus = "stale"
 		}
 	} else {
-		if resp.OverallStatus == "ready" || resp.OverallStatus == "running" || resp.OverallStatus == "starting" {
+		if m.checkRuntimeReady(ctx, cfg, paths) {
+			resp.OverallStatus = "ready"
+			s := resp.Services[processComposeServiceName]
+			if s.Status == "running" || s.Status == "starting" || s.Status == "stale" {
+				s.Status = "stopped"
+			}
+			resp.Services[processComposeServiceName] = s
+		} else if resp.OverallStatus == "ready" || resp.OverallStatus == "running" || resp.OverallStatus == "starting" {
 			resp.OverallStatus = "stale"
 		} else if resp.OverallStatus == "" {
 			resp.OverallStatus = "stopped"
 		}
-		s := resp.Services[processComposeServiceName]
-		if s.Status == "running" || s.Status == "starting" {
-			s.Status = "stale"
-		} else if s.Status == "" || s.Status == "unknown" {
-			s.Status = "stopped"
+		if resp.OverallStatus != "ready" {
+			s := resp.Services[processComposeServiceName]
+			if s.Status == "running" || s.Status == "starting" {
+				s.Status = "stale"
+			} else if s.Status == "" || s.Status == "unknown" {
+				s.Status = "stopped"
+			}
+			resp.Services[processComposeServiceName] = s
 		}
-		resp.Services[processComposeServiceName] = s
 	}
 
 	if !asJSON {
@@ -1145,7 +1268,11 @@ func (m *RuntimeManager) humanStatus(resp StatusResponse) string {
 		fmt.Sprintf("profile: %s", resp.Profile),
 		fmt.Sprintf("overallStatus: %s", resp.OverallStatus),
 		fmt.Sprintf("repoRoot: %s", resp.RepoRoot),
+		fmt.Sprintf("resourcesRoot: %s", resp.ResourcesRoot),
+		fmt.Sprintf("buildRoot: %s", resp.BuildRoot),
 		fmt.Sprintf("runtimeRoot: %s", resp.RuntimeRoot),
+		fmt.Sprintf("dataDir: %s", resp.DataDir),
+		fmt.Sprintf("logsDir: %s", resp.LogsDir),
 	}
 	for name, svc := range resp.Services {
 		lines = append(lines, fmt.Sprintf("%s.kind=%s status=%s", name, svc.Kind, svc.Status))

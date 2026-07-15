@@ -12,7 +12,9 @@ type RuntimeState struct {
 	Version        int                            `json:"version"`
 	Runtime        string                         `json:"runtime"`
 	Profile        string                         `json:"profile"`
+	OwnerToken     string                         `json:"ownerToken,omitempty"`
 	RepoRoot       string                         `json:"repoRoot"`
+	ResourcesRoot  string                         `json:"resourcesRoot,omitempty"`
 	RuntimeRoot    string                         `json:"runtimeRoot"`
 	ProcessCompose ProcessComposeState            `json:"processCompose"`
 	Config         RuntimeConfigSnapshot          `json:"config,omitempty"`
@@ -54,10 +56,16 @@ type RuntimeServiceState struct {
 type StatusResponse struct {
 	Runtime        string                         `json:"runtime"`
 	Profile        string                         `json:"profile"`
+	OwnerMatched   bool                           `json:"ownerMatched,omitempty"`
 	OverallStatus  string                         `json:"overallStatus"`
 	RepoRoot       string                         `json:"repoRoot"`
+	ResourcesRoot  string                         `json:"resourcesRoot,omitempty"`
+	BuildRoot      string                         `json:"buildRoot,omitempty"`
 	RuntimeRoot    string                         `json:"runtimeRoot"`
+	DataDir        string                         `json:"dataDir,omitempty"`
+	LogsDir        string                         `json:"logsDir,omitempty"`
 	ProcessCompose ProcessComposeState            `json:"processCompose"`
+	Config         RuntimeConfigSnapshot          `json:"config,omitempty"`
 	Services       map[string]RuntimeServiceState `json:"services"`
 }
 
@@ -85,11 +93,13 @@ func writeRuntimeState(path string, state RuntimeState) error {
 
 func defaultRuntimeState(cfg RuntimeConfig, apiPort int, tokenPath string) RuntimeState {
 	return RuntimeState{
-		Version:     processComposeVersion,
-		Runtime:     "local",
-		Profile:     cfg.Profile,
-		RepoRoot:    cfg.RepoRoot,
-		RuntimeRoot: cfg.RuntimeRoot,
+		Version:       processComposeVersion,
+		Runtime:       cfg.Profile,
+		Profile:       cfg.Profile,
+		OwnerToken:    cfg.OwnerToken,
+		RepoRoot:      cfg.RepoRoot,
+		ResourcesRoot: cfg.ResourcesRoot,
+		RuntimeRoot:   cfg.RuntimeRoot,
 		ProcessCompose: ProcessComposeState{
 			APIPort:   apiPort,
 			APIRoot:   "http://127.0.0.1:" + itoa(apiPort),
