@@ -218,9 +218,7 @@ def _resolve_method_name(instance: Any, method_name: str) -> str:
 
 
 def _extract_methods(instance: Any) -> list[dict]:
-    public_apis = getattr(instance, '__tool_public_apis__', None)
-    if public_apis is None:
-        public_apis = getattr(instance, '__public_apis__', None)
+    public_apis = getattr(instance, '__public_apis__', None)
     if public_apis is not None:
         methods = []
         for method_name in public_apis:
