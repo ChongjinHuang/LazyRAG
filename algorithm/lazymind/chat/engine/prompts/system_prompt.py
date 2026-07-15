@@ -148,6 +148,7 @@ def _build_response_language_prompt(
         f'Use {language} for all user-visible natural-language text in this turn.'
     )
 
+
 _CLOUD_DOCUMENT_SEARCH_GROUPS = {'feishu', 'notion'}
 
 
