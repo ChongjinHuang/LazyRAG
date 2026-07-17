@@ -425,6 +425,10 @@ export function createOAuthEngine(ctx: ManagementContext) {
         (options?.draftWizardOpen === false ? {} : form.getFieldsValue(true));
 
       const existingDraft = peekFeishuDataSourceWizardDraft();
+      const draftSelectedType =
+        options?.draftSelectedType === "feishu" || options?.draftSelectedType === "notion"
+          ? options.draftSelectedType
+          : ctx.selectedType;
       const draft: FeishuDataSourceWizardDraft = {
         wizardOpen: false,
         openWizardAfterOAuth: options?.openWizardOnSuccess,
@@ -432,7 +436,7 @@ export function createOAuthEngine(ctx: ManagementContext) {
         authSelectProvider: existingDraft?.authSelectProvider,
         wizardStep: options?.draftWizardStep ?? ctx.wizardStep,
         wizardMode: options?.draftWizardMode ?? ctx.wizardMode,
-        selectedType: options?.draftSelectedType ?? ctx.selectedType,
+        selectedType: draftSelectedType,
         editingId: options?.draftEditingId ?? ctx.editingId,
         validatedAgentId: selectedAgent.agent_id || null,
         oauthState: "waiting",
@@ -492,7 +496,9 @@ export function createOAuthEngine(ctx: ManagementContext) {
           restorePreviousOauthState(t("admin.dataSourceOauthWindowClosed"));
         }, 400);
 
-        oauthAttemptRef.current.timerId = timerId;
+        if (oauthAttemptRef.current) {
+          oauthAttemptRef.current.timerId = timerId;
+        }
         popup.focus();
         return true;
       }
