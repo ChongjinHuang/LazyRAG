@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Form, message } from "antd";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
+import { dataSourceCloudOauthApi } from "@/modules/dataSource/api/clients";
 import {
   createFeishuAccountId,
   getOAuthStateFromConnection,
@@ -45,6 +46,12 @@ export function useCloudDocumentProviders() {
   const [notionAppSetup, setNotionAppSetup] = useState<FeishuAppSetup | null>(() =>
     loadNotionAppSetup(),
   );
+  const [feishuSecretConfigured, setFeishuSecretConfigured] = useState(() =>
+    Boolean(loadFeishuAppSetup()?.appSecret.trim()),
+  );
+  const [notionSecretConfigured, setNotionSecretConfigured] = useState(() =>
+    Boolean(loadNotionAppSetup()?.appSecret.trim()),
+  );
   const [notionOauthConnection, setNotionOauthConnection] =
     useState<ManagementContext["notionOauthConnection"]>(null);
   const [oauthConnection, setOauthConnection] = useState<ManagementContext["oauthConnection"]>(null);
@@ -62,10 +69,10 @@ export function useCloudDocumentProviders() {
   const loading = localSettings.loading || oauthLoading;
 
   const isFeishuSetupReady = Boolean(
-    feishuAppSetup?.appId.trim() && feishuAppSetup?.appSecret.trim(),
+    feishuAppSetup?.appId.trim() && (feishuAppSetup?.appSecret.trim() || feishuSecretConfigured),
   );
   const isNotionSetupReady = Boolean(
-    notionAppSetup?.appId.trim() && notionAppSetup?.appSecret.trim(),
+    notionAppSetup?.appId.trim() && (notionAppSetup?.appSecret.trim() || notionSecretConfigured),
   );
   const validFeishuAccounts = feishuAuthAccounts.filter(
     (account) =>
@@ -167,10 +174,45 @@ export function useCloudDocumentProviders() {
   });
   Object.assign(ctx, createOAuthEngine(ctx));
 
+  const refreshCloudAppCredential = async (
+    provider: Extract<CloudDataSourceProvider, "feishu" | "notion">,
+  ) => {
+    try {
+      const response =
+        await dataSourceCloudOauthApi.getOauthAppCredentialsApiAuthserviceV1CloudProviderOauthAppCredentialsGet({
+          provider,
+        });
+      const appId = (response.data.app_id || "").trim();
+      const secretConfigured = Boolean(response.data.secret_configured);
+      if (!appId || !secretConfigured) {
+        return;
+      }
+      const setup = { appId, appSecret: "" };
+      if (provider === "feishu") {
+        setFeishuAppSetup((current) =>
+          current?.appId === appId && current.appSecret.trim() ? current : setup,
+        );
+        setFeishuSecretConfigured(true);
+      } else {
+        setNotionAppSetup((current) =>
+          current?.appId === appId && current.appSecret.trim() ? current : setup,
+        );
+        setNotionSecretConfigured(true);
+      }
+    } catch (error) {
+      console.error(`Failed to refresh ${provider} app credentials`, error);
+    }
+  };
+
   const refreshPageData = async () => {
     setOauthLoading(true);
     try {
-      await Promise.all([ctx.refreshFeishuAuthAccounts(), ctx.refreshNotionAuthConnection()]);
+      await Promise.all([
+        refreshCloudAppCredential("feishu"),
+        refreshCloudAppCredential("notion"),
+        ctx.refreshFeishuAuthAccounts(),
+        ctx.refreshNotionAuthConnection(),
+      ]);
     } finally {
       setOauthLoading(false);
     }
@@ -213,9 +255,11 @@ export function useCloudDocumentProviders() {
       if (provider === "feishu") {
         persistFeishuAppSetup(nextSetup);
         setFeishuAppSetup(nextSetup);
+        setFeishuSecretConfigured(true);
       } else {
         persistNotionAppSetup(nextSetup);
         setNotionAppSetup(nextSetup);
+        setNotionSecretConfigured(true);
       }
       setFeishuSetupModalOpen(false);
       setFeishuSetupIntent(null);
