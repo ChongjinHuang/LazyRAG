@@ -245,6 +245,7 @@ _CLOUD_FILE_TOOLKIT = {
     'tools': [
         FeishuFS(space_id='dynamic', dynamic_auth=True),
         NotionFS(dynamic_auth=True),
+        GoogleDriveFS(dynamic_auth=True),
     ],
     'lazy': True,
 }
@@ -508,12 +509,6 @@ DEFAULT_TOOLS: list[ToolConfig] = [
         name='schedule', label='定时任务', description='创建、查询、修改、取消和立即触发定时任务',
         tool=build_schedule_toolkit(), module='execution', label_en='Schedules',
         description_en='Create, inspect, update, cancel, and trigger recurring schedules.',
-    ),
-    ToolGroupConfig(
-        name='google_drive',
-        label='Google Drive',
-        description='搜索、查找和读取在线 Google Drive 文件',
-        instance=GoogleDriveFS(dynamic_auth=True),
     ),
 ]
 
