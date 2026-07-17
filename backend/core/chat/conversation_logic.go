@@ -55,22 +55,6 @@ func toolConfigFromBody(reqBody map[string]any) map[string]any {
 	return nil
 }
 
-func recordConversationIdleAfterPersist(ctx context.Context, db *gorm.DB, stateStore state.Store, convID, userID, historyID string, at time.Time, query, answer string) {
-	if db == nil || stateStore == nil {
-		return
-	}
-	if err := resourceupdate.RecordConversationIdleMessage(ctx, db, stateStore, resourceupdate.ConversationIdleRecord{
-		SessionID:      convID,
-		UserID:         userID,
-		LastMessageID:  historyID,
-		LastActivityAt: at,
-		UserContent:    query,
-		AssistantText:  answer,
-	}); err != nil {
-		log.Logger.Warn().Err(err).Str("conversation_id", convID).Str("history_id", historyID).Msg("record conversation idle event failed")
-	}
-}
-
 func marshalRetrievalResult(sources []any) json.RawMessage {
 	payload, err := json.Marshal(map[string]any{"sources": sources})
 	if err != nil {
@@ -521,7 +505,11 @@ func buildChatHistoryExt(raw map[string]any, query string) json.RawMessage {
 	if input == nil {
 		return nil
 	}
-	b, err := json.Marshal(map[string]any{"input": input})
+	ext := map[string]any{"input": input}
+	if mentions, ok := raw["mentions"].([]any); ok && len(mentions) > 0 {
+		ext["mentions"] = mentions
+	}
+	b, err := json.Marshal(ext)
 	if err != nil {
 		return nil
 	}
@@ -698,6 +686,7 @@ func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, q
 	filesMap := filesPerTurnMap(histories, currentFilePaths, currentSeq)
 	body := map[string]any{
 		"query":            query,
+		"user_query":       query,
 		"session_id":       sessionID,
 		"conversation_id":  convID,
 		"history":          buildHistoryMessages(histories, askAnswersStructuredFromRaw(raw)),
@@ -711,6 +700,10 @@ func buildChatRequestBody(ctx context.Context, db *gorm.DB, convID, sessionID, q
 		"use_memory":       useMemory,
 		"user_id":          strings.TrimSpace(userID),
 		"mode":             mode,
+		"intent_context":   loadConversationIntentContext(ctx, db, convID),
+	}
+	if mentionContext := buildMentionResourceContext(ctx, db, userID, histories, raw); mentionContext != "" {
+		body["query"] = mentionContext + "\n\nUser query:\n" + query
 	}
 	if environmentContext, ok := raw["environment_context"].(map[string]any); ok {
 		body["environment_context"] = environmentContext
@@ -1008,8 +1001,8 @@ func handleNonStreamChat(
 	db.Model(&orm.Conversation{}).Where("id = ?", convID).Update("updated_at", now)
 	if !target.IsRegeneration {
 		db.Model(&orm.Conversation{}).Where("id = ?", convID).UpdateColumn("chat_times", gorm.Expr("chat_times + ?", 1))
-		recordConversationIdleAfterPersist(context.Background(), db, stateStore, convID, userIDFromChatRequestBody(reqBody), historyID, now, query, answer)
 	}
+	recordSkillEditorConversationActivity(context.Background(), db, stateStore, convID, userIDFromChatRequestBody(reqBody), historyID, query, answer, now)
 	common.ReplyOK(w, map[string]any{
 		"conversation_id": convID,
 		"seq":             target.Seq,
@@ -1115,6 +1108,7 @@ func streamSingleAnswer(
 	var toolCallTurns int
 	var sources []any
 	var pendingAskPending any
+	var pendingConversationIntent *IntentUpdatedEvent
 	thinkStart := time.Now()
 	// text：textConversation/text，finish_reason text UNSPECIFIED
 	writeSSEChunk(w, flusher, &ChatChunkResponse{
@@ -1133,7 +1127,26 @@ func streamSingleAnswer(
 		if d.TaskCreated != nil {
 			userIDForTask, _ := reqBody["user_id"].(string)
 			pluginModeForTask := pluginModeFromReqBody(reqBody)
-			notice := handleTaskCreated(chatCtx, db, stateStore, convID, historyID, userIDForTask, d.TaskCreated, llmConfigFromBody(reqBody), toolConfigFromBody(reqBody), pluginModeForTask)
+			notice, taskErr := handleTaskCreated(chatCtx, db, stateStore, convID, historyID, userIDForTask, d.TaskCreated, llmConfigFromBody(reqBody), toolConfigFromBody(reqBody), pluginModeForTask)
+			if taskErr != nil {
+				failurePrefix := "TASK_START_FAILED: "
+				if d.TaskCreated.AgentType == "plugin_step" {
+					failurePrefix = "PLUGIN_START_FAILED: "
+				}
+				failure := failurePrefix + taskErr.Error()
+				fullText += failure
+				fullResult += failure
+				if reqCtx.Err() == nil {
+					writeSSEChunk(w, flusher, &ChatChunkResponse{
+						ConversationID: convID,
+						Seq:            int32(seq),
+						HistoryID:      historyID,
+						Delta:          failure,
+						FinishReason:   "FINISH_REASON_UNSPECIFIED",
+					})
+				}
+				continue
+			}
 			if notice != nil {
 				taskChunk := &ChatChunkResponse{
 					ConversationID: convID,
@@ -1180,7 +1193,21 @@ func streamSingleAnswer(
 			continue
 		}
 		if d.IntentUpdated != nil {
-			handleIntentUpdated(chatCtx, db, stateStore, convID, d.IntentUpdated)
+			updated := handleIntentUpdated(chatCtx, db, stateStore, convID, d.IntentUpdated)
+			if updated != nil {
+				pendingConversationIntent = updated
+				intentChunk := &ChatChunkResponse{ConversationID: convID, Seq: int32(seq), HistoryID: historyID, FinishReason: "FINISH_REASON_UNSPECIFIED", IntentUpdated: updated}
+				if reqCtx.Err() == nil {
+					writeSSEChunk(w, flusher, intentChunk)
+				}
+				if stateStore != nil {
+					_ = appendChatChunk(chatCtx, stateStore, convID, historyID, intentChunk)
+				}
+			}
+			continue
+		}
+		if d.PluginPreflightUpdated != nil {
+			handlePluginPreflightUpdated(chatCtx, db, convID, d.PluginPreflightUpdated)
 			continue
 		}
 		if d.Heartbeat {
@@ -1234,6 +1261,9 @@ func streamSingleAnswer(
 	if pendingAskPending != nil {
 		historyExt = mergeAskPendingIntoExt(historyExt, pendingAskPending)
 	}
+	if pendingConversationIntent != nil {
+		historyExt = mergeIntentUpdatedIntoExt(historyExt, pendingConversationIntent)
+	}
 	persisted := false
 	if target.IsRegeneration && target.Existing != nil {
 		if err := db.Model(&orm.ChatHistory{}).Where("id = ?", historyID).Updates(map[string]any{
@@ -1279,7 +1309,9 @@ func streamSingleAnswer(
 	}
 	if persisted && !target.IsRegeneration {
 		db.Model(&orm.Conversation{}).Where("id = ?", convID).UpdateColumn("chat_times", gorm.Expr("chat_times + ?", 1))
-		recordConversationIdleAfterPersist(context.Background(), db, stateStore, convID, userIDFromChatRequestBody(reqBody), historyID, now, query, stripToolTags(fullText))
+	}
+	if persisted {
+		recordSkillEditorConversationActivity(context.Background(), db, stateStore, convID, userIDFromChatRequestBody(reqBody), historyID, query, stripToolTags(fullText), now)
 	}
 	if reqCtx.Err() == nil {
 		// text：message text，finish_reason text STOP
@@ -1295,6 +1327,7 @@ func streamSingleAnswer(
 			// Do not replay reasoning on final message frame.
 			ReasoningContent:  "",
 			ThinkingDurationS: int64(time.Since(thinkStart).Seconds()),
+			ToolCallTurns:     toolCallTurns,
 		})
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 		flusher.Flush()
@@ -1522,12 +1555,35 @@ dualPersist:
 	if !target.IsRegeneration {
 		db.Model(&orm.Conversation{}).Where("id = ?", convID).UpdateColumn("chat_times", gorm.Expr("chat_times + ?", 1))
 	}
+	recordSkillEditorConversationActivity(context.Background(), db, stateStore, convID, userIDFromChatRequestBody(reqBody), historyID, query, stripToolTags(primaryText), now)
 	if reqCtx.Err() == nil {
-		writeSSEChunk(w, flusher, map[string]any{"finish_reason": "FINISH_REASON_STOP", "history_id": historyID})
-		writeSSEChunk(w, flusher, map[string]any{"finish_reason": "FINISH_REASON_STOP", "history_id": secondaryHistoryID})
+		writeSSEChunk(w, flusher, map[string]any{
+			"finish_reason":   "FINISH_REASON_STOP",
+			"history_id":      historyID,
+			"tool_call_turns": primaryToolCallTurns,
+		})
+		writeSSEChunk(w, flusher, map[string]any{
+			"finish_reason":   "FINISH_REASON_STOP",
+			"history_id":      secondaryHistoryID,
+			"tool_call_turns": secondaryToolCallTurns,
+		})
 		_, _ = w.Write([]byte("data: [DONE]\n\n"))
 		flusher.Flush()
 	}
+}
+
+func recordSkillEditorConversationActivity(ctx context.Context, db *gorm.DB, stateStore state.Store, conversationID, userID, historyID, userContent, assistantText string, now time.Time) {
+	if db == nil || stateStore == nil || strings.TrimSpace(conversationID) == "" || strings.TrimSpace(userID) == "" || strings.TrimSpace(historyID) == "" {
+		return
+	}
+	_ = resourceupdate.RecordConversationIdleMessage(ctx, db, stateStore, resourceupdate.ConversationIdleRecord{
+		SessionID:      conversationID,
+		UserID:         userID,
+		LastMessageID:  historyID,
+		LastActivityAt: now,
+		UserContent:    userContent,
+		AssistantText:  assistantText,
+	})
 }
 
 // handleTaskCreated persists a SubAgent task record (allocating seq in a transaction),
@@ -1542,9 +1598,9 @@ func handleTaskCreated(
 	llmConfig map[string]any,
 	toolConfig map[string]any,
 	pluginMode string,
-) *TaskCreatedNotice {
+) (*TaskCreatedNotice, error) {
 	if ev == nil || strings.TrimSpace(ev.TaskID) == "" {
-		return nil
+		return nil, fmt.Errorf("task_created event is missing task_id")
 	}
 
 	// Plugin Step path — handled separately.
@@ -1586,7 +1642,7 @@ func handleTaskCreated(
 				Mode:              existing.Mode,
 				Status:            subagent.StatusRunning,
 				SeqInConversation: existing.SeqInConversation,
-			}
+			}, nil
 		}
 	}
 
@@ -1606,7 +1662,7 @@ func handleTaskCreated(
 	})
 	if err != nil {
 		fmt.Println("[Core] [SUBAGENT_CREATE_TASK_FAILED] err=", err)
-		return nil
+		return nil, fmt.Errorf("create subagent task: %w", err)
 	}
 	_ = subagent.WriteStatus(chatCtx, stateStore, task.ID, map[string]any{
 		"status": subagent.StatusPending, "progress": 0,
@@ -1631,7 +1687,7 @@ func handleTaskCreated(
 		Mode:              task.Mode,
 		Status:            task.Status,
 		SeqInConversation: task.SeqInConversation,
-	}
+	}, nil
 }
 
 // handlePluginStepCreated processes a task_created event for agent_type='plugin_step'.
@@ -1645,65 +1701,8 @@ func handlePluginStepCreated(
 	llmConfig map[string]any,
 	toolConfig map[string]any,
 	pluginMode string,
-) *TaskCreatedNotice {
-	// Parse PluginStepParams from ev.Params.
-	var params plugin.PluginStepParams
-	if ev.Params != nil {
-		if pid, ok := ev.Params["plugin_id"].(string); ok {
-			params.PluginID = pid
-		}
-		if sid, ok := ev.Params["step_id"].(string); ok {
-			params.StepID = sid
-		}
-		if sessID, ok := ev.Params["session_id"].(string); ok {
-			params.SessionID = sessID
-		}
-		if ui, ok := ev.Params["user_input"].(string); ok {
-			params.UserInput = ui
-		}
-		if cold, ok := ev.Params["is_cold_start"].(bool); ok {
-			params.IsColdStart = cold
-		}
-		if rh, ok := ev.Params["retry_hint"].(string); ok {
-			params.RetryHint = rh
-		}
-		if pi, ok := ev.Params["partial_indices"].(map[string]any); ok {
-			parsed := make(map[string][]int, len(pi))
-			for k, v := range pi {
-				if arr, ok2 := v.([]any); ok2 {
-					ints := make([]int, 0, len(arr))
-					for _, elem := range arr {
-						if f, ok3 := elem.(float64); ok3 {
-							ints = append(ints, int(f))
-						}
-					}
-					parsed[k] = ints
-				}
-			}
-			params.PartialIndices = parsed
-		}
-		if hfpt, ok := ev.Params["history_files_per_turn"].(map[string]any); ok {
-			parsed := make(map[string][]string, len(hfpt))
-			for k, v := range hfpt {
-				if arr, ok2 := v.([]any); ok2 {
-					strs := make([]string, 0, len(arr))
-					for _, elem := range arr {
-						if s, ok3 := elem.(string); ok3 {
-							strs = append(strs, s)
-						}
-					}
-					parsed[k] = strs
-				}
-			}
-			params.HistoryFilesPerTurn = parsed
-		}
-		if flt, ok := ev.Params["filters"].(map[string]any); ok && len(flt) > 0 {
-			params.Filters = flt
-		}
-		if uid, ok := ev.Params["user_id"].(string); ok && uid != "" {
-			params.UserID = uid
-		}
-	}
+) (*TaskCreatedNotice, error) {
+	params := pluginStepParamsFromEventParams(ev.Params)
 	// Carry the resolved plugin_mode into params so it is persisted with the task
 	// and available when OnSubAgentDone reconstructs PluginChatContext from DB.
 	if pluginMode == "auto" || pluginMode == "dynamic" {
@@ -1713,7 +1712,7 @@ func handlePluginStepCreated(
 	}
 	if params.PluginID == "" || params.StepID == "" {
 		fmt.Println("[Core] [PLUGIN_STEP_INVALID_PARAMS] plugin_id or step_id missing")
-		return nil
+		return nil, fmt.Errorf("plugin_id or step_id missing")
 	}
 
 	sessionID, taskID, pluginCompleted, err := plugin.HandlePluginStepCreated(
@@ -1725,7 +1724,7 @@ func handlePluginStepCreated(
 	)
 	if err != nil {
 		fmt.Printf("[Core] [PLUGIN_STEP_FAILED] err=%v\n", err)
-		return nil
+		return nil, err
 	}
 
 	// When ChatAgent signals plugin completion via __end__, emit plugin_completed
@@ -1738,14 +1737,14 @@ func handlePluginStepCreated(
 				"plugin_id":  params.PluginID,
 			},
 		})
-		return nil
+		return nil, nil
 	}
 
 	// Fetch the created task for the notice.
 	task, getErr := subagent.GetTask(ctx, db, taskID)
 	if getErr != nil {
 		fmt.Printf("[Core] [PLUGIN_STEP_GET_TASK_FAILED] err=%v\n", getErr)
-		return nil
+		return nil, fmt.Errorf("plugin step was accepted but task lookup failed: %w", getErr)
 	}
 	return &TaskCreatedNotice{
 		TaskID:            task.ID,
@@ -1755,34 +1754,318 @@ func handlePluginStepCreated(
 		Status:            task.Status,
 		SeqInConversation: task.SeqInConversation,
 		PluginSessionID:   sessionID,
+	}, nil
+}
+
+func pluginStepParamsFromEventParams(raw map[string]any) plugin.PluginStepParams {
+	var params plugin.PluginStepParams
+	if raw == nil {
+		return params
 	}
+	if pid, ok := raw["plugin_id"].(string); ok {
+		params.PluginID = pid
+	}
+	if v, ok := raw["plugin_ref"].(string); ok {
+		params.PluginRef = v
+	}
+	if v, ok := raw["revision_id"].(string); ok {
+		params.RevisionID = v
+	}
+	if v, ok := raw["tree_hash"].(string); ok {
+		params.TreeHash = v
+	}
+	if v, ok := raw["remote_root"].(string); ok {
+		params.RemoteRoot = v
+	}
+	switch v := raw["revision_no"].(type) {
+	case float64:
+		params.RevisionNo = int64(v)
+	case int64:
+		params.RevisionNo = v
+	case int:
+		params.RevisionNo = int64(v)
+	}
+	if sid, ok := raw["step_id"].(string); ok {
+		params.StepID = sid
+	}
+	if sessID, ok := raw["session_id"].(string); ok {
+		params.SessionID = sessID
+	}
+	if chatSID, ok := raw["chat_session_id"].(string); ok {
+		params.ChatSessionID = chatSID
+	}
+	if ui, ok := raw["user_input"].(string); ok {
+		params.UserInput = ui
+	}
+	if cold, ok := raw["is_cold_start"].(bool); ok {
+		params.IsColdStart = cold
+	}
+	if handOff, ok := raw["hand_off"].(bool); ok {
+		params.HandOff = &handOff
+	}
+	if preflightID, ok := raw["preflight_id"].(string); ok {
+		params.PreflightID = preflightID
+	}
+	if rh, ok := raw["retry_hint"].(string); ok {
+		params.RetryHint = rh
+	}
+	if pi, ok := raw["partial_indices"].(map[string]any); ok {
+		parsed := make(map[string][]int, len(pi))
+		for k, v := range pi {
+			if arr, ok2 := v.([]any); ok2 {
+				ints := make([]int, 0, len(arr))
+				for _, elem := range arr {
+					if f, ok3 := elem.(float64); ok3 {
+						ints = append(ints, int(f))
+					}
+				}
+				parsed[k] = ints
+			}
+		}
+		params.PartialIndices = parsed
+	}
+	if hfpt, ok := raw["history_files_per_turn"].(map[string]any); ok {
+		parsed := make(map[string][]string, len(hfpt))
+		for k, v := range hfpt {
+			if arr, ok2 := v.([]any); ok2 {
+				strs := make([]string, 0, len(arr))
+				for _, elem := range arr {
+					if s, ok3 := elem.(string); ok3 {
+						strs = append(strs, s)
+					}
+				}
+				parsed[k] = strs
+			}
+		}
+		params.HistoryFilesPerTurn = parsed
+	}
+	if flt, ok := raw["filters"].(map[string]any); ok && len(flt) > 0 {
+		params.Filters = flt
+	}
+	if uid, ok := raw["user_id"].(string); ok && uid != "" {
+		params.UserID = uid
+	}
+	return params
+}
+
+// handlePluginPreflightUpdated stores the latest trigger context outside chat history,
+// so long clarification sequences are not lost to agent history compaction.
+func handlePluginPreflightUpdated(
+	ctx context.Context,
+	db *gorm.DB,
+	convID string,
+	ev *PluginPreflightUpdatedEvent,
+) {
+	if db == nil || ev == nil || strings.TrimSpace(convID) == "" {
+		return
+	}
+	var conv orm.Conversation
+	if err := db.WithContext(ctx).Select("id", "ext").Where("id = ?", convID).First(&conv).Error; err != nil {
+		return
+	}
+	ext := map[string]any{}
+	if len(conv.Ext) > 0 {
+		_ = json.Unmarshal(conv.Ext, &ext)
+	}
+	if ev.Clear {
+		delete(ext, "plugin_preflight")
+	} else if len(ev.Snapshot) > 0 {
+		ext["plugin_preflight"] = ev.Snapshot
+	}
+	raw, _ := json.Marshal(ext)
+	_ = db.WithContext(ctx).Model(&orm.Conversation{}).Where("id = ?", convID).Update("ext", raw).Error
+}
+
+func loadPluginPreflightContext(ctx context.Context, db *gorm.DB, convID string) map[string]any {
+	if db == nil || strings.TrimSpace(convID) == "" {
+		return nil
+	}
+	var conv orm.Conversation
+	if err := db.WithContext(ctx).Select("ext").Where("id = ?", convID).First(&conv).Error; err != nil {
+		return nil
+	}
+	ext := map[string]any{}
+	if json.Unmarshal(conv.Ext, &ext) != nil {
+		return nil
+	}
+	preflight, _ := ext["plugin_preflight"].(map[string]any)
+	return preflight
+}
+
+func loadConversationIntentContext(ctx context.Context, db *gorm.DB, convID string) map[string]any {
+	if db == nil || strings.TrimSpace(convID) == "" {
+		return nil
+	}
+	var conv orm.Conversation
+	if err := db.WithContext(ctx).Select("ext").Where("id = ?", convID).First(&conv).Error; err != nil {
+		return nil
+	}
+	ext := map[string]any{}
+	if json.Unmarshal(conv.Ext, &ext) != nil {
+		return nil
+	}
+	intent, _ := ext["intent_context"].(map[string]any)
+	return intent
 }
 
 // mergeAskPendingIntoExt merges ask_pending data into the ext JSON field so that
 // the ask card is persisted and can be restored on page reload.
-// handleIntentUpdated writes the intent emitted by the update_intent tool to DB,
-// then pushes an intent_updated convEvent so the frontend can refresh immediately.
-func handleIntentUpdated(ctx context.Context, db *gorm.DB, stateStore state.Store, convID string, ev *IntentUpdatedEvent) {
-	if ev == nil || ev.SessionID == "" {
-		return
+var intentScalarFields = map[string]bool{"goal": true, "deliverable": true, "execution_mode": true}
+var intentListFields = map[string]bool{
+	"constraints": true, "corrections": true, "emphasized_points": true, "superseded": true,
+}
+
+func normalizeIntentDocument(raw any) map[string]any {
+	doc, _ := raw.(map[string]any)
+	if doc == nil {
+		doc = map[string]any{}
 	}
+	if text, _ := doc["text"].(string); strings.TrimSpace(text) != "" {
+		doc = map[string]any{"constraints": []any{strings.TrimSpace(text)}}
+	}
+	doc["version"] = 2
+	if _, ok := doc["revision"]; !ok {
+		doc["revision"] = 0
+	}
+	return doc
+}
+
+func intentRevision(doc map[string]any) int {
+	switch value := doc["revision"].(type) {
+	case float64:
+		return int(value)
+	case int:
+		return value
+	case int64:
+		return int(value)
+	}
+	return 0
+}
+
+func applyIntentOperations(doc map[string]any, operations []IntentOperation) (map[string]any, error) {
+	doc = normalizeIntentDocument(doc)
+	for _, operation := range operations {
+		op := strings.TrimSpace(operation.Op)
+		field := strings.TrimSpace(operation.Field)
+		value := strings.TrimSpace(operation.Value)
+		if value == "" {
+			return nil, fmt.Errorf("intent value is required")
+		}
+		if op == "set" {
+			if !intentScalarFields[field] {
+				return nil, fmt.Errorf("cannot set intent field %q", field)
+			}
+			doc[field] = value
+			continue
+		}
+		if !intentListFields[field] || (op != "add" && op != "remove" && op != "supersede") {
+			return nil, fmt.Errorf("invalid intent operation %q for field %q", op, field)
+		}
+		items, _ := doc[field].([]any)
+		if typed, ok := doc[field].([]string); ok {
+			items = make([]any, 0, len(typed))
+			for _, item := range typed {
+				items = append(items, item)
+			}
+		}
+		if op == "supersede" {
+			remaining := make([]any, 0, len(items))
+			for _, item := range items {
+				text := strings.TrimSpace(fmt.Sprint(item))
+				if text != "" && text != value {
+					remaining = append(remaining, text)
+				}
+			}
+			doc[field] = remaining
+			superseded, _ := doc["superseded"].([]any)
+			found := false
+			for _, item := range superseded {
+				if strings.TrimSpace(fmt.Sprint(item)) == value {
+					found = true
+				}
+			}
+			if !found {
+				superseded = append(superseded, value)
+			}
+			doc["superseded"] = superseded
+			continue
+		}
+		filtered := make([]any, 0, len(items)+1)
+		seen := false
+		for _, item := range items {
+			text := strings.TrimSpace(fmt.Sprint(item))
+			if text == value {
+				seen = true
+				if op == "remove" {
+					continue
+				}
+			}
+			if text != "" {
+				filtered = append(filtered, text)
+			}
+		}
+		if op != "remove" && !seen {
+			filtered = append(filtered, value)
+		}
+		doc[field] = filtered
+	}
+	doc["revision"] = intentRevision(doc) + 1
+	return doc, nil
+}
+
+// handleIntentUpdated writes the patch emitted by intentwrite to DB,
+// then pushes an intent_updated convEvent so the frontend can refresh immediately.
+func handleIntentUpdated(ctx context.Context, db *gorm.DB, stateStore state.Store, convID string, ev *IntentUpdatedEvent) *IntentUpdatedEvent {
+	if ev == nil || len(ev.Operations) == 0 {
+		return nil
+	}
+	var conversationUpdate *IntentUpdatedEvent
 	if db != nil {
 		now := time.Now().UTC()
-		payload := fmt.Sprintf(`{"text":%q}`, ev.Content)
-		if ev.Scope == "session" {
-			db.WithContext(ctx).Exec(
-				`UPDATE plugin_sessions SET intent_context = ?, updated_at = ? WHERE id = ?`,
-				payload, now, ev.SessionID,
-			)
-		} else if ev.Scope == "step" && ev.StepID != "" {
-			rowID := fmt.Sprintf("psi_%s", common.GenerateID())
-			db.WithContext(ctx).Exec(
-				`INSERT INTO plugin_step_intents (id, session_id, step_id, intent_context, updated_at)
+		if ev.Scope == "conversation" && strings.TrimSpace(convID) != "" {
+			var conv orm.Conversation
+			if db.WithContext(ctx).Select("id", "ext").Where("id = ?", convID).First(&conv).Error == nil {
+				ext := map[string]any{}
+				_ = json.Unmarshal(conv.Ext, &ext)
+				doc := normalizeIntentDocument(ext["intent_context"])
+				if updated, err := applyIntentOperations(doc, ev.Operations); err == nil {
+					ext["intent_context"] = updated
+					raw, _ := json.Marshal(ext)
+					if db.WithContext(ctx).Model(&orm.Conversation{}).Where("id = ?", convID).Update("ext", raw).Error == nil {
+						conversationUpdate = &IntentUpdatedEvent{Scope: "conversation", IntentContext: updated}
+					}
+				}
+			}
+		} else if ev.Scope == "plugin_session" && ev.SessionID != "" {
+			var session orm.PluginSession
+			if db.WithContext(ctx).Select("intent_context").Where("id = ?", ev.SessionID).First(&session).Error == nil {
+				doc := map[string]any{}
+				_ = json.Unmarshal([]byte(session.IntentContext), &doc)
+				if updated, err := applyIntentOperations(doc, ev.Operations); err == nil {
+					payload, _ := json.Marshal(updated)
+					_ = db.WithContext(ctx).Model(&orm.PluginSession{}).Where("id = ?", ev.SessionID).
+						Updates(map[string]any{"intent_context": string(payload), "updated_at": now}).Error
+				}
+			}
+		} else if ev.Scope == "plugin_step" && ev.SessionID != "" && ev.StepID != "" {
+			var existing orm.PluginStepIntent
+			doc := map[string]any{}
+			if db.WithContext(ctx).Where("session_id = ? AND step_id = ?", ev.SessionID, ev.StepID).
+				First(&existing).Error == nil {
+				_ = json.Unmarshal([]byte(existing.IntentContext), &doc)
+			}
+			updated, err := applyIntentOperations(doc, ev.Operations)
+			if err == nil {
+				payload, _ := json.Marshal(updated)
+				rowID := fmt.Sprintf("psi_%s", common.GenerateID())
+				_ = db.WithContext(ctx).Exec(
+					`INSERT INTO plugin_step_intents (id, session_id, step_id, intent_context, updated_at)
 				 VALUES (?, ?, ?, ?, ?)
 				 ON CONFLICT (session_id, step_id) DO UPDATE
 				 SET intent_context = EXCLUDED.intent_context, updated_at = EXCLUDED.updated_at`,
-				rowID, ev.SessionID, ev.StepID, payload, now,
-			)
+					rowID, ev.SessionID, ev.StepID, string(payload), now,
+				).Error
+			}
 		}
 	}
 	if stateStore != nil {
@@ -1795,6 +2078,20 @@ func handleIntentUpdated(ctx context.Context, db *gorm.DB, stateStore state.Stor
 			},
 		})
 	}
+	return conversationUpdate
+}
+
+func mergeIntentUpdatedIntoExt(ext json.RawMessage, intent *IntentUpdatedEvent) json.RawMessage {
+	m := make(map[string]any)
+	if len(ext) > 0 {
+		_ = json.Unmarshal(ext, &m)
+	}
+	m["intent_updated"] = intent
+	b, err := json.Marshal(m)
+	if err != nil {
+		return ext
+	}
+	return b
 }
 
 func mergeAskPendingIntoExt(ext json.RawMessage, askPending any) json.RawMessage {

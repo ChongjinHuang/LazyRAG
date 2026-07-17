@@ -15,18 +15,11 @@ router = APIRouter()
 class MemoryReviewPayload(BaseModel):
     model_config = ConfigDict(extra='forbid')
 
+    task_id: str = Field(..., description='Core resource update task ID for this review run')
     user_id: str = Field(..., description='Backend user ID being reviewed')
     history: List[Dict[str, Any]] = Field(
         default_factory=list,
         description='Chat history passed by backend for review',
-    )
-    memory: str = Field(
-        default='',
-        description='Current full agent memory text to edit',
-    )
-    user: str = Field(
-        default='',
-        description='Current full user profile text to edit',
     )
     llm_config: Optional[Dict[str, Any]] = Field(
         None,
@@ -38,6 +31,11 @@ class MemoryReviewPayload(BaseModel):
 
     @model_validator(mode='after')
     def validate_payload(self) -> 'MemoryReviewPayload':
+        self.task_id = str(self.task_id).strip()
+        if not self.task_id:
+            raise ValueError("'task_id' must be non-empty.")
+        if not self.task_id.startswith('memory_review_'):
+            raise ValueError("'task_id' must start with 'memory_review_'.")
         self.user_id = str(self.user_id).strip()
         if not self.user_id:
             raise ValueError("'user_id' must be non-empty.")
@@ -58,10 +56,9 @@ class MemoryReviewPayload(BaseModel):
 async def memory_review(payload: MemoryReviewPayload):
     try:
         result = review_memory(
+            task_id=payload.task_id,
             user_id=payload.user_id,
             history=payload.history,
-            memory=payload.memory,
-            user=payload.user,
             llm_config=payload.llm_config,
         )
     except Exception as exc:

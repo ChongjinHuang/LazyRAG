@@ -2,7 +2,6 @@
 
 Routes:
     POST /api/plugin/driver              DriverAgent evaluation endpoint (called by Go EventLoop).
-    POST /api/plugin/step-cancel         Enqueue cancel signal into the step_done FileSystemQueue (called by Go :stop).
     GET  /api/plugin/slot-binding        Slot binding lookup (called by Go OnArtifactEvent).
     GET  /api/plugins                    List all loaded plugins.
     GET  /api/plugins/{plugin_id}        Get plugin spec (supports Accept-Language for i18n labels).
@@ -32,15 +31,6 @@ class DriverRequest(BaseModel):
 
 class DriverResponse(BaseModel):
     message: str  # Natural-language assessment passed verbatim to ChatAgent as user input
-
-
-class StepCancelRequest(BaseModel):
-    session_id: str
-    step_id: str
-
-
-class StepCancelResponse(BaseModel):
-    ok: bool
 
 
 class TaskCancelRequest(BaseModel):
@@ -74,25 +64,6 @@ async def plugin_driver(req: DriverRequest) -> DriverResponse:
     except DriverEvaluationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return DriverResponse(message=result.get('message', ''))
-
-
-@router.post('/api/plugin/step-cancel', response_model=StepCancelResponse, summary='Cancel a running plugin step')
-async def step_cancel(req: StepCancelRequest) -> StepCancelResponse:
-    """Enqueue a cancel signal for a running plugin step.
-
-    Called by the Go EventLoop when the user stops chat generation.
-    The signal is written into the FileSystemQueue that _wait_for_step_done polls,
-    causing the dynamic-mode advance_step tool to unblock and return immediately.
-    """
-    import json
-    try:
-        from lazyllm.common.queue import FileSystemQueue
-        queue_key = f'step_done_{req.session_id}_{req.step_id}'
-        fsq = FileSystemQueue(klass=queue_key)
-        fsq.enqueue(json.dumps({'tag': 'cancel'}))
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    return StepCancelResponse(ok=True)
 
 
 @router.post('/api/plugin/task-cancel', response_model=TaskCancelResponse, summary='Cancel a running SubAgent task')

@@ -49,7 +49,7 @@ _PLUGIN_FORMAT_SPEC: str = _load_plugin_format_spec()
 
 # Top-level required fields
 _REQUIRED_PLUGIN_TOP = ['id', 'name', 'description', 'steps', 'slots']
-_REQUIRED_STATE_TOP = ['initial', 'transitions', 'steps']
+_REQUIRED_STATE_TOP = ['transitions', 'steps']
 
 # Required per-item fields (checked dynamically)
 _REQUIRED_SLOT_FIELDS = ['id', 'label', 'type', 'cardinality']
@@ -73,7 +73,20 @@ _SYSTEM_PROMPT_TEMPLATE = (
     'Rules:\n'
     '- Follow the format specification below exactly.\n'
     '- plugin.yaml slots must be a list of objects with {id, type, ...}; NOT a map.\n'
-    '- state.yml steps must use {slot, required} objects for inputs/outputs; no top-level slots block.\n'
+    '- state.yml inputs are one ordered list: [{material, required, alternatives?}].\n'
+    '- alternatives is allowed only when required is true and contains material references.\n'
+    '- Do not emit bind_as; material IDs are globally unique.\n'
+    '- Outputs use {material: slot_id} and are always required; each non-external material has exactly one producer.\n'
+    '- Materials are durable artifacts only: extra data explicitly supplied separately by the user '
+    '(file/image/form field/dataset) or outputs produced by prior steps.\n'
+    '- Mark genuine extra user/session-provided materials with external: true in plugin.yaml slots.\n'
+    '- The user query, task description, intent, instructions, prompt text, and conversation context are NOT materials. '
+    'Never create pseudo-materials such as user_query, search_query, request, topic, '
+    'task_description, or instructions.\n'
+    '- Route decisions use an optional natural-language `when` hint for ChatAgent; '
+    'never use a material expression on an edge.\n'
+    '- skip_if is a flat material expression: all(materials) or any(materials), with no nesting.\n'
+    '- The control graph must be a DAG. Natural-language routes do not require an unconditional fallback.\n'
     '- Return your response as a JSON object with these keys:\n'
     '    {"plugin_yaml": "...", "state_yaml": "...", "scenario_md": "...", "scripts": {}}\n'
     '- scripts is optional; omit it or set to {} when no custom tools are needed.\n'
@@ -199,13 +212,40 @@ def _call_llm(prompt: str) -> str:
 
 
 def _extract_json(raw: str) -> Dict[str, Any]:
-    """Extract the outermost JSON object from a raw LLM response string."""
-    match = re.search(r'\{[\s\S]*\}', raw)
-    if not match:
-        raise ValueError(f'No JSON found in LLM response: {raw[:300]}')
+    """Extract the first complete JSON object from a raw LLM response string.
+
+    Uses json.JSONDecoder.raw_decode to find the first well-formed object rather
+    than a greedy regex that can fail when the LLM wraps output in markdown fences
+    or when script code contains bare braces outside the JSON.
+    """
+    # Strip common markdown code-fence wrappers that LLMs sometimes add.
+    text = raw.strip()
+    for fence in ('```json', '```JSON', '```'):
+        if text.startswith(fence):
+            text = text[len(fence):]
+            if text.endswith('```'):
+                text = text[:-3]
+            text = text.strip()
+            break
+
+    decoder = json.JSONDecoder()
+    # Scan from the first '{' character so we skip any preamble text.
+    idx = text.find('{')
+    if idx == -1:
+        raise ValueError(f'No JSON object found in LLM response: {raw[:300]}')
     try:
-        return json.loads(match.group(0))
+        obj, _ = decoder.raw_decode(text, idx)
+        if isinstance(obj, dict):
+            return obj
+        raise ValueError(f'Parsed JSON is not a dict: {type(obj)}')
     except json.JSONDecodeError as exc:
+        # Fallback: try the original greedy regex as last resort.
+        match = re.search(r'\{[\s\S]*\}', text)
+        if match:
+            try:
+                return json.loads(match.group(0))
+            except json.JSONDecodeError:
+                pass
         raise ValueError(f'Invalid JSON in LLM response: {exc}') from exc
 
 
