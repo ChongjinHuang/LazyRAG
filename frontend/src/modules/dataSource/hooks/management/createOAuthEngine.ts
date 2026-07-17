@@ -392,7 +392,7 @@ export function createOAuthEngine(ctx: ManagementContext) {
     const previousConnection = options?.previousConnection ?? ctx.oauthConnection;
 
     try {
-      if (!activeSetup?.appId.trim() || !activeSetup.appSecret.trim()) {
+      if (!activeSetup?.appId.trim()) {
         message.warning(
           provider === "feishu"
             ? t("admin.dataSourceFeishuCredentialRequired")

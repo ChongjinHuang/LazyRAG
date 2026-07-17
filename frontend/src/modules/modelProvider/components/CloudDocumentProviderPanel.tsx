@@ -2,7 +2,7 @@ import { Alert, Form, Input, Modal, Skeleton, Tag } from "antd";
 import { ArrowRightOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { FeishuCredentialHintAlertFromForm } from "@/modules/dataSource/common/FeishuCredentialHintAlert";
 import { formatValidFeishuAccountNames } from "@/modules/dataSource/utils/feishuAccount";
-import { cloudAuthProviderOptions } from "../constants/cloudProviderOptions";
+import { cloudAuthProviderOptions, cloudProviderOptions } from "../constants/cloudProviderOptions";
 import {
   CLOUD_DOCUMENTS_FEISHU_SETUP_PATH,
   CLOUD_DOCUMENTS_NOTION_SETUP_PATH,
@@ -84,11 +84,13 @@ export default function CloudDocumentProviderPanel({ vm }: { vm: CloudDocumentPr
         className="model-provider-cloud-doc-grid"
         aria-busy="true"
       >
-        {Array.from({ length: canCreateLocalSource ? 3 : 2 }, (_, index) => (
-          <div className="model-provider-cloud-doc-skeleton" key={index}>
-            <Skeleton active avatar={{ shape: "square", size: 44 }} paragraph={{ rows: 1 }} />
-          </div>
-        ))}
+        {cloudProviderOptions
+          .filter((item) => item.type !== "local" || canCreateLocalSource)
+          .map((item) => (
+            <div className="model-provider-cloud-doc-skeleton" key={item.type}>
+              <Skeleton active avatar={{ shape: "square", size: 44 }} paragraph={{ rows: 1 }} />
+            </div>
+          ))}
       </div>
     );
   }
