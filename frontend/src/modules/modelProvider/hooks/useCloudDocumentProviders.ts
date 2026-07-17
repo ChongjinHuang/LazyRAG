@@ -145,9 +145,9 @@ export function useCloudDocumentProviders() {
     notionAppSetup,
     setNotionAppSetup,
     oauthAttemptRef,
-    localScanChatEnabled: localSettings.localScanChatEnabled,
+    localScanChatEnabled: false,
     setLocalScanChatEnabled: () => undefined,
-    localScanChatSaving: localSettings.localScanChatSaving,
+    localScanChatSaving: false,
     setLocalScanChatSaving: () => undefined,
     validatedAgentId: null,
     setValidatedAgentId: () => undefined,
@@ -175,7 +175,6 @@ export function useCloudDocumentProviders() {
       setOauthLoading(false);
     }
   };
-  useCloudDocumentProviders
   const openCloudSetupModal = (
     provider: CloudDataSourceProvider,
     intent: CloudSetupIntent = "auth",
@@ -329,7 +328,6 @@ export function useCloudDocumentProviders() {
     feishuSetupSubmitting,
     canCreateLocalSource: localSettings.canCreateLocalSource,
     localSourceCount: localSettings.localSourceCount,
-    localScanChatEnabled: localSettings.localScanChatEnabled,
     isFeishuAuthValid,
     isNotionAuthValid,
     isFeishuSetupReady,

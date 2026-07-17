@@ -7,7 +7,7 @@ import {
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getCloudDataSourceCallbackUrl } from "./oauth/urls";
+import { getCloudDataSourceCallbackUrl } from "@/modules/dataSource/oauth/urls";
 import "./feishuSetupGuide.scss";
 import { CLOUD_DOCUMENTS_PATH } from "../utils/cloudDocumentUrls";
 
