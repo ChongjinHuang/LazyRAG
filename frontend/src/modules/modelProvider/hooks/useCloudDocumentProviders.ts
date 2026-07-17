@@ -59,6 +59,9 @@ export function useCloudDocumentProviders() {
   );
   const [notionOauthConnection, setNotionOauthConnection] =
     useState<ManagementContext["notionOauthConnection"]>(null);
+  const [notionAuthAccounts, setNotionAuthAccounts] = useState<
+    FeishuAuthAccount[]
+  >([]);
   const [googleDriveConnection, setGoogleDriveConnection] =
     useState<ManagementContext["notionOauthConnection"]>(null);
   const [oauthConnection, setOauthConnection] = useState<ManagementContext["oauthConnection"]>(null);
@@ -153,6 +156,8 @@ export function useCloudDocumentProviders() {
     setOauthConnection,
     notionOauthConnection,
     setNotionOauthConnection,
+    notionAuthAccounts,
+    setNotionAuthAccounts,
     feishuAuthAccounts,
     setFeishuAuthAccounts,
     editingFeishuAccountId,

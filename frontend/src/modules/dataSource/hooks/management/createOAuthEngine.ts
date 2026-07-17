@@ -94,7 +94,9 @@ export function createOAuthEngine(ctx: ManagementContext) {
           provider: "notion",
           status: null,
         });
-      const cachedAccounts = ctx.notionAuthAccounts;
+      const cachedAccounts = Array.isArray(ctx.notionAuthAccounts)
+        ? ctx.notionAuthAccounts
+        : [];
       const nextAccounts = getCloudConnectionItems(response.data).map((item) =>
         mapCloudConnectionToNotionAccount(item, cachedAccounts),
       );
