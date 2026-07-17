@@ -6,7 +6,6 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .guidance import (
     ATTACHED_FILES_GUIDANCE,
-    CLOUD_DOCUMENT_SEARCH_GUIDANCE,
     DEFAULT_SYSTEM_PROMPT,
     IMAGE_REFERENCE_MARKDOWN_GUIDANCE,
     KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE,
@@ -149,9 +148,6 @@ def _build_response_language_prompt(
     )
 
 
-_CLOUD_DOCUMENT_SEARCH_GROUPS = {'feishu', 'notion'}
-
-
 def _format_user_time(time_now: object, timezone: object) -> str:
     raw_time = str(time_now).strip()
     if not raw_time:
@@ -258,8 +254,6 @@ def build_system_prompt(
     if active_groups & _KNOWLEDGE_EVIDENCE_GROUPS:
         prompt_parts.append(SEARCH_GUIDANCE)
         prompt_parts.append(KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE)
-    if active_groups & _CLOUD_DOCUMENT_SEARCH_GROUPS:
-        prompt_parts.append(CLOUD_DOCUMENT_SEARCH_GUIDANCE)
     if 'web_search' in active_groups:
         prompt_parts.append(WEB_SEARCH_GUIDANCE)
     if (
