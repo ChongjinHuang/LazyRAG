@@ -45,18 +45,6 @@ KNOWLEDGE_EVIDENCE_CITATION_GUIDANCE = (
     'document index, cite using the original `[[document.chunk]]` markers present '
     'in the retrieved evidence. Do not invent, rewrite, or fabricate citation markers.'
 )
-CLOUD_DOCUMENT_GUIDANCE = (
-    '# Cloud document rules\n'
-    'For Notion, use `ls` with `path="/"` when the user asks which pages or databases '
-    'are available. Use `search` only with a real, non-empty title keyword supplied or '
-    'implied by the user; never use `*` as a wildcard. An empty result does not mean '
-    'authentication failed, so report authentication problems only when the tool returns '
-    'an explicit authentication or permission error. '
-    'When the user asks to search Google Drive or provides a Google Docs, Sheets, '
-    'or Drive URL, use the Google Drive file-system tools. Use `search` for one or '
-    'more content keywords and `find` only for file-name regular expressions. Read '
-    'the matched file before answering questions that depend on its content.'
-)
 ATTACHED_FILES_GUIDANCE = (
     '# Attached file rules\n'
     'Attachments are listed for reference only — do NOT parse or read them automatically.\n'
