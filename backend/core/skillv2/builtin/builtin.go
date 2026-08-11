@@ -20,15 +20,17 @@ type Manifest struct {
 }
 
 type Package struct {
-	UID         string
-	Category    string
-	Name        string
-	Description string
-	Files       map[string][]byte
+	UID           string
+	Category      string
+	SkillCategory string
+	Name          string
+	Description   string
+	Files         map[string][]byte
 }
 
 type skillMDFrontmatter struct {
 	Name        string `yaml:"name"`
+	Category    string `yaml:"category"`
 	Description string `yaml:"description"`
 }
 
@@ -38,6 +40,7 @@ var Manifests = []Manifest{
 	{UID: "bsk_01JZ7Q4RPN6K3Y8V1D5H2A9S0B", Category: "review", DirName: "systematic-document-and-literature-review"},
 	{UID: "bsk_01JZ7Q58M4E7C2N9X6P1D3V0KA", Category: "search", DirName: "paper-search"},
 	{UID: "bsk_01K0M8SCV7PAPERSEARCH9Q2X3A4B", Category: "search", DirName: "sciverse-paper-search"},
+	{UID: "bsk_01K2A3B4C5D6E7F8G9HJKMNPQR", Category: "external", DirName: "data-report"},
 }
 
 func TemplateID(uid string) string {
@@ -127,16 +130,23 @@ func LoadPackage(manifest Manifest) (Package, error) {
 	if !ok {
 		return Package{}, fmt.Errorf("builtin skill %s missing SKILL.md", manifest.UID)
 	}
-	name, description := parseSkillMDMetadata(string(skillMD))
+	meta, _ := parseSkillMDFrontmatter(string(skillMD))
+	name := strings.TrimSpace(meta.Name)
+	description := strings.TrimSpace(meta.Description)
+	skillCategory := strings.TrimSpace(meta.Category)
 	if name == "" {
 		name = manifest.DirName
 	}
+	if skillCategory == "" {
+		skillCategory = manifest.Category
+	}
 	return Package{
-		UID:         manifest.UID,
-		Category:    manifest.Category,
-		Name:        name,
-		Description: description,
-		Files:       files,
+		UID:           manifest.UID,
+		Category:      manifest.Category,
+		SkillCategory: skillCategory,
+		Name:          name,
+		Description:   description,
+		Files:         files,
 	}, nil
 }
 
@@ -166,18 +176,26 @@ func Root() string {
 }
 
 func parseSkillMDMetadata(content string) (string, string) {
+	meta, ok := parseSkillMDFrontmatter(content)
+	if !ok {
+		return "", ""
+	}
+	return strings.TrimSpace(meta.Name), strings.TrimSpace(meta.Description)
+}
+
+func parseSkillMDFrontmatter(content string) (skillMDFrontmatter, bool) {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	if !strings.HasPrefix(content, "---\n") {
-		return "", ""
+		return skillMDFrontmatter{}, false
 	}
 	rest := strings.TrimPrefix(content, "---\n")
 	idx := strings.Index(rest, "\n---\n")
 	if idx < 0 {
-		return "", ""
+		return skillMDFrontmatter{}, false
 	}
 	var meta skillMDFrontmatter
 	if err := yaml.Unmarshal([]byte(rest[:idx]), &meta); err != nil {
-		return "", ""
+		return skillMDFrontmatter{}, false
 	}
-	return strings.TrimSpace(meta.Name), strings.TrimSpace(meta.Description)
+	return meta, true
 }

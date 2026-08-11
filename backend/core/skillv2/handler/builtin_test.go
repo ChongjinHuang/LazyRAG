@@ -44,6 +44,8 @@ func TestListBuiltinSkillsIncludesTemplatesAndUserInstallState(t *testing.T) {
 		Data struct {
 			Items []struct {
 				UID              string `json:"builtin_skill_uid"`
+				Name             string `json:"name"`
+				Category         string `json:"category"`
 				Content          string `json:"content"`
 				Installed        bool   `json:"installed"`
 				InstalledSkillID string `json:"installed_skill_id"`
@@ -61,4 +63,13 @@ func TestListBuiltinSkillsIncludesTemplatesAndUserInstallState(t *testing.T) {
 	if first.UID != manifest.UID || first.Content == "" || !first.Installed || first.InstalledSkillID != "installed_builtin_skill" {
 		t.Fatalf("unexpected first builtin item: %#v", first)
 	}
+	for _, item := range response.Data.Items {
+		if item.Name == "data-report" {
+			if item.Category != "external" || item.Installed {
+				t.Fatalf("data-report must be external and uninstalled by default: %#v", item)
+			}
+			return
+		}
+	}
+	t.Fatal("data-report not found in builtin skills response")
 }

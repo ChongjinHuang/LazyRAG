@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from lazymind.chat.engine.attachment_reader import (
     is_chat_attachment_file,
     is_chat_image_file,
+    is_chat_spreadsheet_file,
     is_chat_text_file,
     parse_attachment_content,
 )
@@ -1116,7 +1117,8 @@ def _resolve_attachment(
 def read_user_attachment(filename: str, turn: Optional[int] = None) -> Dict[str, Any]:
     """Extract text from a user-uploaded attachment (on demand only).
 
-    Documents (pdf/doc/docx/pptx): OCR reader. Plain-text files: direct UTF-8 read.
+    Documents (pdf/doc/docx/pptx): OCR reader. Excel files: structured sheet extraction.
+    Plain-text files: direct UTF-8 read.
     Images: vision-model text description.
     Do NOT call this just because a file is attached. For images used in visual tasks
     (edit, workflow, image_generator), use find_user_attachment for path/url instead.
@@ -1149,7 +1151,7 @@ def read_user_attachment(filename: str, turn: Optional[int] = None) -> Dict[str,
             'status': 'error',
             'message': (
                 f"Unsupported file type '{os.path.splitext(matched)[1].lower() or '(no extension)'}'. "
-                'Supported: images, Office/PDF documents, and common plain-text files.'
+                'Supported: images, Office/PDF documents, Excel spreadsheets, and common plain-text files.'
             ),
         })
 
@@ -1166,7 +1168,9 @@ def read_user_attachment(filename: str, turn: Optional[int] = None) -> Dict[str,
         })
 
     kind = 'image' if is_chat_image_file(matched) else (
-        'text' if is_chat_text_file(matched) else 'document'
+        'text' if is_chat_text_file(matched) else (
+            'spreadsheet' if is_chat_spreadsheet_file(matched) else 'document'
+        )
     )
 
     return tool_success('read_user_attachment', {

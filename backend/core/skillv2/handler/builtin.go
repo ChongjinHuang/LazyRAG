@@ -117,7 +117,7 @@ func EnableBuiltinSkill(w http.ResponseWriter, r *http.Request) {
 		CreateUserID:          userID,
 		CreateUserName:        userName,
 		Name:                  pkg.Name,
-		Category:              pkg.Category,
+		Category:              pkg.SkillCategory,
 		OriginBuiltinSkillUID: pkg.UID,
 		Description:           pkg.Description,
 		IsEnabled:             boolPtr(true),

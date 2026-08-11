@@ -10,15 +10,26 @@ import lazyllm
 from lazyllm import AutoModel, LOG
 from lazyllm.components.formatter import encode_query_with_filepaths
 
-from lazymind.chat.config import CHAT_DOCUMENT_EXTENSIONS, CHAT_TEXT_EXTENSIONS, IMAGE_EXTENSIONS
+from lazymind.chat.config import (
+    CHAT_DOCUMENT_EXTENSIONS,
+    CHAT_SPREADSHEET_EXTENSIONS,
+    CHAT_TEXT_EXTENSIONS,
+    IMAGE_EXTENSIONS,
+)
 from lazymind.chat.engine.prompts import VISION_EXTRACT_DEFAULT_INSTRUCTION
 from lazymind.config import config as _cfg
 from lazymind.model_config import is_model_role_available
 
-_SUPPORTED_ATTACHMENT_LABEL = 'images, Office/PDF documents, and common plain-text files'
+_SUPPORTED_ATTACHMENT_LABEL = (
+    'images, Office/PDF documents, Excel spreadsheets, and common plain-text files'
+)
 _PROMPT_TEMPLATE_PLACEHOLDER_RE = re.compile(r'\{(\w+)\}')
 _MAX_TEXT_ATTACHMENT_CHARS = 200_000
 _MAX_DOCUMENT_ATTACHMENT_CHARS = 200_000
+_MAX_SPREADSHEET_ATTACHMENT_CHARS = 200_000
+_MAX_SPREADSHEET_ROWS_PER_SHEET = 5_000
+_MAX_SPREADSHEET_SHEETS = 20
+_DELIMITED_TEXT_EXTENSIONS = ('.csv', '.tsv')
 
 
 def _sanitize_for_prompt_template(text: str) -> str:
@@ -53,12 +64,21 @@ def is_chat_document_file(path: str) -> bool:
     return _suffix(path) in CHAT_DOCUMENT_EXTENSIONS
 
 
+def is_chat_spreadsheet_file(path: str) -> bool:
+    return _suffix(path) in CHAT_SPREADSHEET_EXTENSIONS
+
+
 def is_chat_text_file(path: str) -> bool:
     return _suffix(path) in CHAT_TEXT_EXTENSIONS
 
 
 def is_chat_attachment_file(path: str) -> bool:
-    return is_chat_image_file(path) or is_chat_document_file(path) or is_chat_text_file(path)
+    return (
+        is_chat_image_file(path)
+        or is_chat_document_file(path)
+        or is_chat_spreadsheet_file(path)
+        or is_chat_text_file(path)
+    )
 
 
 def filter_chat_image_files(files: List[str]) -> List[str]:
@@ -183,6 +203,107 @@ def read_chat_text_file(file_path: str, max_chars: int = _MAX_TEXT_ATTACHMENT_CH
     return body
 
 
+def _format_numeric_value(value) -> str:
+    if value is None:
+        return ''
+    number = float(value)
+    if number.is_integer():
+        return str(int(number))
+    return format(number, '.12g')
+
+
+def _build_numeric_summary(frame, *, scope: str) -> str:
+    import pandas as pd
+
+    rows = []
+    for column in frame.columns:
+        values = pd.to_numeric(frame[column], errors='coerce').dropna()
+        if values.empty:
+            continue
+        rows.append({
+            'column': str(column),
+            'count': len(values.index),
+            'sum': _format_numeric_value(values.sum()),
+            'mean': _format_numeric_value(values.mean()),
+            'min': _format_numeric_value(values.min()),
+            'max': _format_numeric_value(values.max()),
+        })
+    if not rows:
+        return ''
+    summary = pd.DataFrame(rows).to_csv(index=False, lineterminator='\n').rstrip()
+    return (
+        f'## Deterministic Numeric Summary: {scope}\n'
+        'Computed from the included rows. Use these values to verify aggregate KPIs.\n'
+        f'{summary}'
+    )
+
+
+def read_chat_delimited_file(
+    file_path: str,
+    *,
+    max_chars: int = _MAX_TEXT_ATTACHMENT_CHARS,
+    max_rows: int = _MAX_SPREADSHEET_ROWS_PER_SHEET,
+) -> str:
+    import pandas as pd
+
+    started_at = _log_parse_start(file_path, kind='delimited')
+    separator = '\t' if _suffix(file_path) == '.tsv' else ','
+    frame = pd.read_csv(file_path, sep=separator, nrows=max_rows + 1)
+    rows_truncated = len(frame.index) > max_rows
+    if rows_truncated:
+        frame = frame.iloc[:max_rows]
+    summary = _build_numeric_summary(frame, scope=Path(file_path).name)
+    table = frame.to_csv(index=False, sep=separator, na_rep='', lineterminator='\n').rstrip()
+    body = '\n\n'.join(part for part in (summary, '## Data\n' + table) if part)
+    if rows_truncated:
+        body += f'\n[File truncated after {max_rows} data rows.]'
+    if len(body) > max_chars:
+        body = body[:max_chars] + f'\n\n[Attachment truncated after {max_chars} characters.]'
+    _log_parse_done(file_path, kind='delimited', started_at=started_at, body=body)
+    return body
+
+
+def read_chat_spreadsheet_file(
+    file_path: str,
+    *,
+    max_chars: int = _MAX_SPREADSHEET_ATTACHMENT_CHARS,
+    max_rows_per_sheet: int = _MAX_SPREADSHEET_ROWS_PER_SHEET,
+    max_sheets: int = _MAX_SPREADSHEET_SHEETS,
+) -> str:
+    import pandas as pd
+
+    started_at = _log_parse_start(file_path, kind='spreadsheet')
+    sections: List[str] = []
+    with pd.ExcelFile(file_path) as workbook:
+        sheet_names = workbook.sheet_names
+        for sheet_name in sheet_names[:max_sheets]:
+            frame = pd.read_excel(
+                workbook,
+                sheet_name=sheet_name,
+                dtype=object,
+                nrows=max_rows_per_sheet + 1,
+            )
+            rows_truncated = len(frame.index) > max_rows_per_sheet
+            if rows_truncated:
+                frame = frame.iloc[:max_rows_per_sheet]
+            csv_content = frame.to_csv(index=False, na_rep='', lineterminator='\n')
+            summary = _build_numeric_summary(frame, scope=sheet_name)
+            section = f'## Sheet: {sheet_name}\n{csv_content}'.rstrip()
+            if summary:
+                section = f'{summary}\n\n{section}'
+            if rows_truncated:
+                section += f'\n[Sheet truncated after {max_rows_per_sheet} data rows.]'
+            sections.append(section)
+        if len(sheet_names) > max_sheets:
+            sections.append(f'[Workbook truncated after {max_sheets} sheets.]')
+
+    body = '\n\n'.join(sections)
+    if len(body) > max_chars:
+        body = body[:max_chars] + f'\n\n[Attachment truncated after {max_chars} characters.]'
+    _log_parse_done(file_path, kind='spreadsheet', started_at=started_at, body=body)
+    return body
+
+
 def extract_image_description(
     file_path: str,
     *,
@@ -208,7 +329,7 @@ def extract_image_description(
 
 
 def parse_attachment_content(file_path: str, *, priority: int = 0) -> str:
-    """Parse one chat attachment via VLM, OCR, or direct UTF-8 text reading."""
+    """Parse one chat attachment via VLM, OCR, spreadsheet, or text readers."""
     path = str(Path(file_path).resolve())
     if not is_chat_attachment_file(path):
         raise ValueError(
@@ -219,14 +340,18 @@ def parse_attachment_content(file_path: str, *, priority: int = 0) -> str:
         if not is_model_role_available('vlm'):
             raise RuntimeError('vlm model role is not configured')
         return extract_image_description(path, priority=priority)
+    if _suffix(path) in _DELIMITED_TEXT_EXTENSIONS:
+        return read_chat_delimited_file(path)
     if is_chat_text_file(path):
         return read_chat_text_file(path)
+    if is_chat_spreadsheet_file(path):
+        return read_chat_spreadsheet_file(path)
     return read_chat_document_text(path)
 
 
 def _build_reference_section(file_path: str, body: str, *, kind: str) -> str:
     name = Path(file_path).name
-    label = 'Image' if kind == 'image' else 'Document'
+    label = {'image': 'Image', 'spreadsheet': 'Spreadsheet'}.get(kind, 'Document')
     safe_body = _sanitize_for_prompt_template(body.strip())
     return (
         f'## Attached {label} Reference: {name}\n'
@@ -249,7 +374,9 @@ def build_attachment_reference_prompt(files: List[str], *, priority: int = 0) ->
                 continue
             body = parse_attachment_content(path, priority=priority)
             if body:
-                kind = 'image' if is_chat_image_file(path) else 'document'
+                kind = 'image' if is_chat_image_file(path) else (
+                    'spreadsheet' if is_chat_spreadsheet_file(path) else 'document'
+                )
                 sections.append(_build_reference_section(path, body, kind=kind))
         except Exception as exc:
             LOG.warning(f'[AttachmentReader] failed to parse {path}: {exc}')
