@@ -1,0 +1,13 @@
+{
+  "slug": "smart-charts",
+  "name": "smart-charts",
+  "version": "5.0.0",
+  "installedAt": 1785996552536,
+  "source": "skillhub",
+  "iconSource": "https://skillhub-1388575217.cos.accelerate.myqcloud.com/skill-icons/uploads/421765/85a10ac10d4242a89852889f7ee5b06d.png",
+  "labels": {
+    "requires_api_key": "false"
+  },
+  "iconLocalPath": "/Users/tangongyan/.workbuddy/skills/smart-charts__skillhub/_icon.png",
+  "iconDownloadedFrom": "https://skillhub-1388575217.cos.accelerate.myqcloud.com/skill-icons/uploads/421765/85a10ac10d4242a89852889f7ee5b06d.png"
+}

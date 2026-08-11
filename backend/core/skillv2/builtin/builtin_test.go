@@ -1,6 +1,7 @@
 package builtin
 
 import (
+	"path/filepath"
 	"testing"
 )
 
@@ -93,5 +94,55 @@ func TestParseSkillMDMetadata_TrimsWhitespace(t *testing.T) {
 	name, desc := parseSkillMDMetadata(content)
 	if name != "Padded" || desc != "Desc with spaces" {
 		t.Fatalf("got name=%q desc=%q", name, desc)
+	}
+}
+
+func TestSmartChartsPackageIsShippedCompleteAndExternal(t *testing.T) {
+	builtinRoot, err := filepath.Abs("../../../../skills")
+	if err != nil {
+		t.Fatalf("resolve builtin skills root: %v", err)
+	}
+	t.Setenv("LAZYMIND_BUILTIN_SKILLS_DIR", builtinRoot)
+
+	var manifest Manifest
+	found := false
+	for _, item := range Manifests {
+		if item.DirName == "smart-charts" {
+			manifest = item
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("smart-charts builtin manifest not found")
+	}
+	if manifest.Category != "external" {
+		t.Fatalf("smart-charts category = %q, want external", manifest.Category)
+	}
+
+	pkg, err := LoadPackage(manifest)
+	if err != nil {
+		t.Fatalf("load smart-charts package: %v", err)
+	}
+	if pkg.Name != "smart-charts" {
+		t.Fatalf("smart-charts package name = %q", pkg.Name)
+	}
+	for _, requiredPath := range []string{
+		"SKILL.md",
+		"REFERENCE.md",
+		"requirements.txt",
+		"_icon.png",
+		"_meta.json",
+		"_skillhub_meta.json",
+		"core/__init__.py",
+		"core/chart_generator.py",
+		"core/data_parser.py",
+		"core/data_transformer.py",
+		"core/exceptions.py",
+		"core/generate_hashes.py",
+	} {
+		if _, ok := pkg.Files[requiredPath]; !ok {
+			t.Errorf("smart-charts package missing %s", requiredPath)
+		}
 	}
 }
