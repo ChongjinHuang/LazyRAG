@@ -48,9 +48,11 @@ func newUploadID() string {
 }
 
 const (
-	uploadScopeTask    = "TASK"
-	uploadScopeDataset = "DATASET"
-	uploadScopeTemp    = "TEMP"
+	uploadScopeTask                 = "TASK"
+	uploadScopeDataset              = "DATASET"
+	uploadScopeTemp                 = "TEMP"
+	maxTempUploadFileBytes    int64 = 100 * 1024 * 1024
+	maxTempUploadRequestBytes int64 = 1024*1024*1024 + 10*1024*1024
 )
 
 func streamUploadedFile(w http.ResponseWriter, r *http.Request, inline bool) {
@@ -432,7 +434,8 @@ func UploadTempFile(w http.ResponseWriter, r *http.Request) {
 		common.ReplyErr(w, "missing X-User-Id", http.StatusBadRequest)
 		return
 	}
-	if err := r.ParseMultipartForm(512 << 20); err != nil {
+	r.Body = http.MaxBytesReader(w, r.Body, maxTempUploadRequestBytes)
+	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		common.ReplyErr(w, fmt.Sprintf("%s: %v", "invalid multipart form", err), http.StatusBadRequest)
 		return
 	}
@@ -450,6 +453,10 @@ func UploadTempFile(w http.ResponseWriter, r *http.Request) {
 	resp := make([]UploadFileResponse, 0, len(files))
 	now := time.Now().UTC()
 	for _, fh := range files {
+		if fh.Size > maxTempUploadFileBytes {
+			common.ReplyErr(w, "temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge)
+			return
+		}
 		uploadFileID := newUploadID()
 		storedName := storedFileName(fh.Filename, uploadFileID)
 		finalDir := buildTempUploadFileDir(userID, uploadFileID)
@@ -469,11 +476,17 @@ func UploadTempFile(w http.ResponseWriter, r *http.Request) {
 			common.ReplyErr(w, fmt.Sprintf("%s: %v", "create upload target failed", err), http.StatusInternalServerError)
 			return
 		}
-		size, copyErr := io.Copy(out, file)
+		size, copyErr := io.Copy(out, io.LimitReader(file, maxTempUploadFileBytes+1))
 		_ = out.Close()
 		_ = file.Close()
 		if copyErr != nil {
+			_ = os.Remove(finalPath)
 			common.ReplyErr(w, "save upload file failed", http.StatusInternalServerError)
+			return
+		}
+		if size > maxTempUploadFileBytes {
+			_ = os.Remove(finalPath)
+			common.ReplyErr(w, "temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge)
 			return
 		}
 		size, normalizeErr := normalizeUploadedTextFileInPlace(finalPath, fh.Filename, size)
@@ -959,8 +972,16 @@ func InitTempUpload(w http.ResponseWriter, r *http.Request) {
 		common.ReplyErr(w, "file_size must be >= 0", http.StatusBadRequest)
 		return
 	}
+	if req.FileSize > maxTempUploadFileBytes {
+		common.ReplyErr(w, "temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge)
+		return
+	}
 	if req.PartSize < 0 {
 		common.ReplyErr(w, "part_size must be >= 0", http.StatusBadRequest)
+		return
+	}
+	if req.PartSize > maxTempUploadFileBytes {
+		common.ReplyErr(w, "temporary upload part exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge)
 		return
 	}
 	resp, _, err := initUploadSession(r.Context(), initUploadSessionArgs{Scope: uploadScopeTemp, Filename: req.Filename, FileSize: req.FileSize, ContentType: req.ContentType, PartSize: req.PartSize, CreateUserID: userID, CreateUserName: userName})
@@ -1162,15 +1183,32 @@ func uploadPartInternal(w http.ResponseWriter, r *http.Request, session orm.Uplo
 		return
 	}
 	partPath := filepath.Join(dir, "parts", fmt.Sprintf("%06d.part", partNumber))
+	partLimit := meta.PartSize
+	if partLimit <= 0 || partLimit > maxTempUploadFileBytes {
+		partLimit = maxTempUploadFileBytes
+	}
+	if meta.UploadScope == uploadScopeTemp && r.ContentLength > partLimit {
+		common.ReplyErr(w, "temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge)
+		return
+	}
 	f, err := os.Create(partPath)
 	if err != nil {
 		common.ReplyErr(w, fmt.Sprintf("%s: %v", "create part failed", err), http.StatusInternalServerError)
 		return
 	}
-	n, copyErr := io.Copy(f, r.Body)
+	reader := io.Reader(r.Body)
+	if meta.UploadScope == uploadScopeTemp {
+		reader = io.LimitReader(r.Body, partLimit+1)
+	}
+	n, copyErr := io.Copy(f, reader)
 	_ = f.Close()
 	if copyErr != nil {
 		common.ReplyErr(w, "write part failed", http.StatusInternalServerError)
+		return
+	}
+	if meta.UploadScope == uploadScopeTemp && n > partLimit {
+		_ = os.Remove(partPath)
+		common.ReplyErr(w, "temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge)
 		return
 	}
 	meta.UploadedParts = appendUniquePart(meta.UploadedParts, partNumber)
@@ -1228,6 +1266,11 @@ func completeUploadInternal(ctx context.Context, session orm.UploadSession, args
 			return CompleteUploadResponse{}, http.StatusInternalServerError, fmt.Errorf("merge part failed")
 		}
 		totalSize += n
+		if meta.UploadScope == uploadScopeTemp && totalSize > maxTempUploadFileBytes {
+			_ = merged.Close()
+			_ = os.Remove(mergedPath)
+			return CompleteUploadResponse{}, http.StatusRequestEntityTooLarge, fmt.Errorf("temporary upload exceeds the 100 MiB file limit")
+		}
 	}
 	_ = merged.Close()
 

@@ -1,6 +1,11 @@
+import zipfile
+
 import pandas as pd
+import pytest
 
 from lazymind.chat.engine.attachment_reader import (
+    _build_numeric_summary,
+    _format_numeric_value,
     is_chat_attachment_file,
     is_chat_spreadsheet_file,
     parse_attachment_content,
@@ -71,3 +76,42 @@ def test_delimited_reader_includes_deterministic_numeric_summary(tmp_path):
     assert 'profit,2,54360,27180,24000,30360' in content
     assert '## Data' in content
     assert '2026-02,138000,30360' in content
+
+
+def test_numeric_summary_preserves_integers_beyond_float_precision():
+    exact = 9_007_199_254_740_993
+    frame = pd.DataFrame({'amount': pd.Series([exact, 1], dtype='int64')})
+
+    summary = _build_numeric_summary(frame, scope='precision')
+
+    assert _format_numeric_value(exact) == str(exact)
+    assert 'amount,2,9007199254740994' in summary
+
+
+def test_spreadsheet_reader_rejects_oversized_file_before_parsing(tmp_path):
+    workbook = tmp_path / 'oversized.xlsx'
+    with workbook.open('wb') as file:
+        file.seek(100 * 1024 * 1024)
+        file.write(b'x')
+
+    with pytest.raises(ValueError, match='100 MiB limit'):
+        read_chat_spreadsheet_file(str(workbook))
+
+
+def test_spreadsheet_reader_rejects_suspicious_zip_ratio(tmp_path):
+    workbook = tmp_path / 'compressed.xlsx'
+    with zipfile.ZipFile(workbook, 'w', compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr('[Content_Types].xml', b'A' * (2 * 1024 * 1024))
+
+    with pytest.raises(ValueError, match='suspicious compression ratio'):
+        read_chat_spreadsheet_file(str(workbook))
+
+
+def test_spreadsheet_reader_stops_at_character_budget(tmp_path):
+    workbook = tmp_path / 'quarterly-report.xlsx'
+    _write_workbook(workbook)
+
+    content = read_chat_spreadsheet_file(str(workbook), max_chars=120)
+
+    assert '[Attachment truncated after 120 characters.]' in content
+    assert '## Sheet: Regions' not in content

@@ -40,7 +40,6 @@ var Manifests = []Manifest{
 	{UID: "bsk_01JZ7Q4RPN6K3Y8V1D5H2A9S0B", Category: "review", DirName: "systematic-document-and-literature-review"},
 	{UID: "bsk_01JZ7Q58M4E7C2N9X6P1D3V0KA", Category: "search", DirName: "paper-search"},
 	{UID: "bsk_01K0M8SCV7PAPERSEARCH9Q2X3A4B", Category: "search", DirName: "sciverse-paper-search"},
-	{UID: "bsk_01K2A3B4C5D6E7F8G9HJKMNPQR", Category: "external", DirName: "data-report"},
 }
 
 func TemplateID(uid string) string {
