@@ -340,6 +340,9 @@ func init() {
 	registerAdditionalError("external agent thread not found", http.StatusNotFound, 2002047)
 	registerAdditionalError("external agent control release is already pending", http.StatusConflict, 2002048)
 	registerAdditionalError("task is terminal", http.StatusConflict, 2002049)
+	registerAdditionalError("temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002050)
+	registerAdditionalError("temporary upload part exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002051)
+	registerAdditionalError("temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge, 2002052)
 
 }
 
