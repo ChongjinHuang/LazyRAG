@@ -75,6 +75,31 @@ func TestStreamLocalFileSubagentWorkspace(t *testing.T) {
 	}
 }
 
+func TestStreamLocalFileForcesHTMLDownloadAndSandbox(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("LAZYMIND_UPLOAD_ROOT", root)
+	fullPath := filepath.Join(root, "report.html")
+	if err := os.WriteFile(fullPath, []byte("<script>top.location='https://example.com'</script>"), 0o644); err != nil {
+		t.Fatalf("write html: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	streamLocalFile(recorder, fullPath, "report.html", "text/html; charset=utf-8", true)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", recorder.Code, recorder.Body.String())
+	}
+	if got := recorder.Header().Get("Content-Disposition"); !strings.Contains(got, "attachment") {
+		t.Fatalf("expected forced attachment disposition, got %q", got)
+	}
+	if got := recorder.Header().Get("Content-Security-Policy"); !strings.Contains(got, "sandbox") {
+		t.Fatalf("expected sandbox CSP, got %q", got)
+	}
+	if got := recorder.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Fatalf("expected nosniff, got %q", got)
+	}
+}
+
 func TestGetSignedStaticFileSubagentPath(t *testing.T) {
 	subRoot := t.TempDir()
 	t.Setenv("LAZYMIND_SUBAGENT_WORKSPACE", subRoot)

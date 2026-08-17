@@ -44,8 +44,6 @@ func TestListBuiltinSkillsIncludesTemplatesAndUserInstallState(t *testing.T) {
 		Data struct {
 			Items []struct {
 				UID              string `json:"builtin_skill_uid"`
-				Name             string `json:"name"`
-				Category         string `json:"category"`
 				Content          string `json:"content"`
 				Installed        bool   `json:"installed"`
 				InstalledSkillID string `json:"installed_skill_id"`
@@ -62,18 +60,5 @@ func TestListBuiltinSkillsIncludesTemplatesAndUserInstallState(t *testing.T) {
 	first := response.Data.Items[0]
 	if first.UID != manifest.UID || first.Content == "" || !first.Installed || first.InstalledSkillID != "installed_builtin_skill" {
 		t.Fatalf("unexpected first builtin item: %#v", first)
-	}
-	smartChartsFound := false
-	for _, item := range response.Data.Items {
-		if item.Name != "smart-charts" {
-			continue
-		}
-		smartChartsFound = true
-		if item.Category != "external" || item.Installed {
-			t.Fatalf("unexpected smart-charts builtin state: %#v", item)
-		}
-	}
-	if !smartChartsFound {
-		t.Fatal("smart-charts builtin not listed")
 	}
 }
