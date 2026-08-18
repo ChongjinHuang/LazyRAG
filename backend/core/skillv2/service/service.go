@@ -1108,6 +1108,7 @@ func validateSkillFiles(files map[string][]byte) error {
 
 type skillMDMetadata struct {
 	Name        string `yaml:"name"`
+	DisplayName string `yaml:"displayName"`
 	Category    string `yaml:"category"`
 	Description string `yaml:"description"`
 }
@@ -1121,7 +1122,11 @@ func validateSkillPackageMetadata(name, category, description string, files map[
 	if !ok {
 		return nil
 	}
-	if metaName := strings.TrimSpace(meta.Name); metaName != "" && metaName != name {
+	metaName := strings.TrimSpace(meta.DisplayName)
+	if metaName == "" {
+		metaName = strings.TrimSpace(meta.Name)
+	}
+	if metaName != "" && metaName != name {
 		return fmt.Errorf("request name and frontmatter name must match")
 	}
 	if metaCategory := strings.TrimSpace(meta.Category); metaCategory != "" && metaCategory != category {

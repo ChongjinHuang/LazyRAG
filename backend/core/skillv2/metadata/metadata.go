@@ -23,6 +23,7 @@ type Metadata struct {
 
 type frontmatter struct {
 	Name        string `yaml:"name"`
+	DisplayName string `yaml:"displayName"`
 	Description string `yaml:"description"`
 }
 
@@ -40,12 +41,17 @@ func ParseRequired(content []byte) (Metadata, error) {
 	if err := yaml.Unmarshal([]byte(rest[:idx]), &raw); err != nil {
 		return Metadata{}, fmt.Errorf("invalid SKILL.md frontmatter: %w", err)
 	}
-	meta := Metadata{
-		Name:        strings.TrimSpace(raw.Name),
-		Description: strings.TrimSpace(raw.Description),
-	}
-	if meta.Name == "" {
+	canonicalName := strings.TrimSpace(raw.Name)
+	if canonicalName == "" {
 		return Metadata{}, fmt.Errorf("SKILL.md frontmatter field \"name\" is required")
+	}
+	effectiveName := strings.TrimSpace(raw.DisplayName)
+	if effectiveName == "" {
+		effectiveName = canonicalName
+	}
+	meta := Metadata{
+		Name:        effectiveName,
+		Description: strings.TrimSpace(raw.Description),
 	}
 	if err := validatePathSegment(meta.Name); err != nil {
 		return Metadata{}, fmt.Errorf("invalid SKILL.md frontmatter field \"name\": %w", err)

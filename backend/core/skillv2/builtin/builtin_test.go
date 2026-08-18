@@ -52,6 +52,14 @@ func TestParseSkillMDMetadata(t *testing.T) {
 	}
 }
 
+func TestParseSkillMDMetadataPrefersDisplayName(t *testing.T) {
+	content := "---\nname: cangjie-skill\ndisplayName: 拆书成技能\ndescription: 把书蒸馏成可执行的技能\n---\n\n# Body content"
+	name, desc := parseSkillMDMetadata(content)
+	if name != "拆书成技能" || desc != "把书蒸馏成可执行的技能" {
+		t.Fatalf("got name=%q desc=%q", name, desc)
+	}
+}
+
 // TestParseSkillMDMetadata_NoFrontmatter returns empty strings.
 func TestParseSkillMDMetadata_NoFrontmatter(t *testing.T) {
 	name, desc := parseSkillMDMetadata("# Just a heading")

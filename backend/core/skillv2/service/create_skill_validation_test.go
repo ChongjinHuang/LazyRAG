@@ -231,6 +231,15 @@ func TestCreateSkillFromUploadedZip_SupportsChineseFileNames(t *testing.T) {
 	}
 }
 
+func TestValidateSkillPackageMetadataAcceptsDisplayName(t *testing.T) {
+	files := map[string][]byte{
+		"SKILL.md": []byte("---\nname: cangjie-skill\ndisplayName: 拆书成技能\ndescription: 把书蒸馏成可执行的技能\n---\n# Skill\n"),
+	}
+	if err := validateSkillPackageMetadata("拆书成技能", "external", "把书蒸馏成可执行的技能", files); err != nil {
+		t.Fatalf("validateSkillPackageMetadata returned error: %v", err)
+	}
+}
+
 func newCreateSkillValidationService(t *testing.T, db *gorm.DB, uploadStore *fakeUploadStore) *SkillService {
 	t.Helper()
 	return NewSkillService(SkillServiceDeps{

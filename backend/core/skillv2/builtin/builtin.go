@@ -29,6 +29,7 @@ type Package struct {
 
 type skillMDFrontmatter struct {
 	Name        string `yaml:"name"`
+	DisplayName string `yaml:"displayName"`
 	Description string `yaml:"description"`
 }
 
@@ -179,5 +180,9 @@ func parseSkillMDMetadata(content string) (string, string) {
 	if err := yaml.Unmarshal([]byte(rest[:idx]), &meta); err != nil {
 		return "", ""
 	}
-	return strings.TrimSpace(meta.Name), strings.TrimSpace(meta.Description)
+	name := strings.TrimSpace(meta.DisplayName)
+	if name == "" {
+		name = strings.TrimSpace(meta.Name)
+	}
+	return name, strings.TrimSpace(meta.Description)
 }
