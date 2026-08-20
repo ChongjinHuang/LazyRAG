@@ -14,15 +14,17 @@ import (
 const TemplateIDPrefix = "builtin:"
 
 type Manifest struct {
-	UID      string
-	Category string
-	DirName  string
+	UID         string
+	Category    string
+	DirName     string
+	DisplayName string
 }
 
 type Package struct {
 	UID         string
 	Category    string
 	Name        string
+	DisplayName string
 	Description string
 	Files       map[string][]byte
 }
@@ -131,10 +133,15 @@ func LoadPackage(manifest Manifest) (Package, error) {
 	if name == "" {
 		name = manifest.DirName
 	}
+	displayName := strings.TrimSpace(manifest.DisplayName)
+	if displayName == "" {
+		displayName = name
+	}
 	return Package{
 		UID:         manifest.UID,
 		Category:    manifest.Category,
 		Name:        name,
+		DisplayName: displayName,
 		Description: description,
 		Files:       files,
 	}, nil

@@ -50,7 +50,7 @@ func ListBuiltinSkills(w http.ResponseWriter, r *http.Request) {
 		}
 		items = append(items, map[string]any{
 			"builtin_skill_uid":  pkg.UID,
-			"name":               pkg.Name,
+			"name":               pkg.DisplayName,
 			"description":        pkg.Description,
 			"category":           pkg.Category,
 			"content":            string(pkg.Files["SKILL.md"]),
