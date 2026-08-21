@@ -14,9 +14,11 @@ import (
 const TemplateIDPrefix = "builtin:"
 
 type Manifest struct {
-	UID      string
-	Category string
-	DirName  string
+	UID                 string
+	Category            string
+	DirName             string
+	FallbackName        string
+	FallbackDescription string
 }
 
 type Package struct {
@@ -129,7 +131,13 @@ func LoadPackage(manifest Manifest) (Package, error) {
 	}
 	name, description := parseSkillMDMetadata(string(skillMD))
 	if name == "" {
+		name = strings.TrimSpace(manifest.FallbackName)
+	}
+	if name == "" {
 		name = manifest.DirName
+	}
+	if description == "" {
+		description = strings.TrimSpace(manifest.FallbackDescription)
 	}
 	return Package{
 		UID:         manifest.UID,
