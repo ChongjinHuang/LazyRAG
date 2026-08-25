@@ -21,5 +21,11 @@ bundled_skills:
     path: search/sciverse-paper-search
     category: search
     version: 1.0.0
-skills:
-  - https://raw.githubusercontent.com/ChongjinHuang/LazyRAG/aca3fce5e19a6f90909b13dd41b9f3178442040f/skill-source-archives/xiaohongshu-copywriter-plus-1.0.0.zip
+  # Vendored unchanged after the original SkillHub download endpoint stopped
+  # serving this published package.
+  # https://skillhub.cn/skills/user_6850f0da/xiaohongshu-copywriter-plus
+  - uid: bsk_57A96CE818B5BC89ACAF8EEAC14D
+    path: third-party/xiaohongshu-copywriter-plus
+    category: external
+    version: 1.0.0
+skills: []

@@ -77,18 +77,18 @@
       "package_file": "packages/bsk_01K0M8SCV7PAPERSEARCH9Q2X3A4B.zip"
     },
     {
-      "key": "xiaohongshu-copywriter-plus-1.0.0",
+      "key": "xiaohongshu-copywriter-plus",
       "uid": "bsk_57A96CE818B5BC89ACAF8EEAC14D",
-      "source_url": "https://raw.githubusercontent.com/ChongjinHuang/LazyRAG/aca3fce5e19a6f90909b13dd41b9f3178442040f/skill-source-archives/xiaohongshu-copywriter-plus-1.0.0.zip",
-      "resolved_url": "https://raw.githubusercontent.com/ChongjinHuang/LazyRAG/aca3fce5e19a6f90909b13dd41b9f3178442040f/skill-source-archives/xiaohongshu-copywriter-plus-1.0.0.zip",
+      "source_url": "builtin://third-party/xiaohongshu-copywriter-plus",
+      "resolved_url": "builtin://third-party/xiaohongshu-copywriter-plus",
       "version": "1.0.0",
       "name": "xiaohongshu-copywriter",
       "description": "小红书爆款种草文案生成器。一键生成高点击率、高收藏率的小红书种草笔记，自带10套爆款标题公式、六段式正文结构、emoji排版、话题标签推荐和发布策略，适用于美妆、护肤、穿搭、美食、家居、数码、母婴等品类。当用户需要撰写小红书种草笔记、产品推广文案、小红书营销内容、种草推荐文时触发此技能。",
       "category": "external",
       "market_visible": true,
-      "archive_sha256": "76718eafb790f0d8ff0c6d53c5a503ea36a0d0fc9aa40dca89d0fa12579d20a2",
+      "archive_sha256": "fc97566b24189b9ab4238ded926bce4a0883bfb394a09b3b4b4fa66494cecc9e",
       "tree_sha256": "de940e3328b9dabb0501df4246ca8dca2bb7bb8527faeef68a6aae3f81e1d763",
-      "archive_size": 14114,
+      "archive_size": 14796,
       "package_file": "packages/bsk_57A96CE818B5BC89ACAF8EEAC14D.zip"
     },
     {
