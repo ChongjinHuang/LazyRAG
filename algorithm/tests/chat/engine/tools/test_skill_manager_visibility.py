@@ -1,17 +1,11 @@
 from __future__ import annotations
 
+import os
+
 import pytest
 
+from lazyllm.tools.agent import skill_manager as skill_manager_mod
 from lazyllm.tools.agent.skill_manager import SkillManager
-
-
-class RecordingSandbox:
-    def __init__(self):
-        self.calls = []
-
-    def execute_script(self, **kwargs):
-        self.calls.append(kwargs)
-        return {'status': 'ok', 'stdout': 'ok\n', 'stderr': '', 'exit_code': 0}
 
 
 def _make_skill(base_dir, name: str) -> None:
@@ -33,12 +27,18 @@ def _make_skill(base_dir, name: str) -> None:
     (scripts_dir / 'check.py').write_text('print("ok")\n', encoding='utf-8')
 
 
-def test_skill_list_filters_prompt_list_read_and_run(tmp_path):
+def test_skill_list_filters_prompt_list_read_and_run(tmp_path, monkeypatch):
     _make_skill(tmp_path, 'visible-skill')
     _make_skill(tmp_path, 'hidden-skill')
-    sandbox = RecordingSandbox()
+    shell_calls = []
 
-    manager = SkillManager(dir=str(tmp_path), skills=['visible-skill'], sandbox=sandbox)
+    def fake_shell_tool(cmd, cwd=None, allow_unsafe=False):
+        shell_calls.append({'cmd': cmd, 'cwd': cwd, 'allow_unsafe': allow_unsafe})
+        return {'status': 'ok', 'stdout': 'ok\n', 'stderr': '', 'exit_code': 0, 'cwd': cwd}
+
+    monkeypatch.setattr(skill_manager_mod, '_shell_tool', fake_shell_tool)
+
+    manager = SkillManager(dir=str(tmp_path), skills=['visible-skill'])
 
     listing = manager.list_skill()
     assert 'visible-skill' in listing
@@ -61,12 +61,12 @@ def test_skill_list_filters_prompt_list_read_and_run(tmp_path):
 
     visible_result = manager.run_script('visible-skill', 'scripts/check.py')
     assert visible_result['status'] == 'ok'
-    assert sandbox.calls
-    assert sandbox.calls[0]['rel_path'] == 'scripts/check.py'
+    assert shell_calls
+    assert os.path.basename(shell_calls[0]['cwd']) == 'visible-skill'
 
     hidden_result = manager.run_script('hidden-skill', 'scripts/check.py')
     assert hidden_result == {'status': 'missing', 'name': 'hidden-skill'}
-    assert len(sandbox.calls) == 1
+    assert len(shell_calls) == 1
 
 
 @pytest.mark.parametrize(
