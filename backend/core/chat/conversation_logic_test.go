@@ -36,6 +36,78 @@ func TestBuildChatRequestBodyUsesConversationIDDerivedSessionID(t *testing.T) {
 	}
 }
 
+func TestEphemeralConversationIsHiddenUntilPromoted(t *testing.T) {
+	database := newPromptTestDB(t)
+	db := database.DB
+	store.Init(db, nil, nil)
+	t.Cleanup(func() { store.Init(nil, nil, nil) })
+
+	conversation, _, err := ensureConversation(
+		context.Background(), db, "preview-chat", "Preview chat", nil, nil,
+		"u1", "User 1", map[string]any{
+			"ephemeral": true, "source_type": "pdf_preview", "source_document_id": "doc-1",
+		},
+	)
+	if err != nil || !conversation.IsEphemeral || conversation.EphemeralExpiresAt == nil ||
+		conversation.SourceType != "pdf_preview" || conversation.SourceDocumentID != "doc-1" {
+		t.Fatalf("create ephemeral conversation: conversation=%#v err=%v", conversation, err)
+	}
+
+	list := func() []map[string]any {
+		req := httptest.NewRequest(http.MethodGet, "/api/core/conversations", nil)
+		req.Header.Set("X-User-Id", "u1")
+		rec := httptest.NewRecorder()
+		ListConversations(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var response struct {
+			Conversations []map[string]any `json:"conversations"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &response); err != nil {
+			t.Fatal(err)
+		}
+		return response.Conversations
+	}
+	if got := list(); len(got) != 0 {
+		t.Fatalf("ephemeral conversation leaked into history: %#v", got)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/core/conversations/preview-chat:promote", nil)
+	req = mux.SetURLVars(req, map[string]string{"conversation_id": "preview-chat"})
+	req.Header.Set("X-User-Id", "u1")
+	rec := httptest.NewRecorder()
+	PromoteConversation(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("promote status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if got := list(); len(got) != 1 || got[0]["conversation_id"] != "preview-chat" ||
+		got[0]["source_type"] != "pdf_preview" || got[0]["source_document_id"] != "doc-1" {
+		t.Fatalf("promoted conversation missing from history: %#v", got)
+	}
+}
+
+func TestPersistentEphemeralConversationHasNoExpiry(t *testing.T) {
+	database := newPromptTestDB(t)
+	db := database.DB
+	store.Init(db, nil, nil)
+	t.Cleanup(func() { store.Init(nil, nil, nil) })
+
+	conversation, _, err := ensureConversation(
+		context.Background(), db, "persistent-preview", "Preview chat", nil, nil,
+		"u1", "User 1", map[string]any{
+			"ephemeral": true, "persistent_ephemeral": true,
+			"source_type": "pdf_preview", "source_document_id": "doc-1",
+		},
+	)
+	if err != nil {
+		t.Fatalf("create persistent ephemeral conversation: %v", err)
+	}
+	if !conversation.IsEphemeral || conversation.EphemeralExpiresAt != nil {
+		t.Fatalf("persistent ephemeral conversation should not expire: %#v", conversation)
+	}
+}
+
 func TestConversationListSeparatesAssistantOwnershipFromExecutionEngine(t *testing.T) {
 	database := newPromptTestDB(t)
 	db := database.DB
@@ -197,6 +269,40 @@ func TestPromoteAgentRuntimeFlagsPrefersExplicitRequest(t *testing.T) {
 	}
 	if enabled, _ := body["enable_subagent"].(bool); enabled {
 		t.Fatalf("expected persisted enable_subagent=false: %#v", body)
+	}
+}
+
+func TestApplyChatFeatureControlsOverridesConversationRuntimeFlags(t *testing.T) {
+	db := newPromptTestDB(t)
+	now := time.Now().UTC()
+	if err := db.Model(&orm.UserUIPreferences{}).Create(map[string]any{
+		"user_id": "user-1", "task_center_enabled": false, "skills_enabled": true,
+		"workflows_enabled": true, "mcp_enabled": true, "document_parsing_enabled": true,
+		"created_at": now, "updated_at": now,
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	body := map[string]any{
+		"enable_workflow": true,
+		"enable_subagent": true,
+		"agentic_config": map[string]any{
+			"enable_workflow": true,
+			"enable_subagent": true,
+		},
+	}
+
+	if err := applyChatFeatureControls(t.Context(), db.DB, "user-1", body); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, _ := body["enable_workflow"].(bool); enabled {
+		t.Fatalf("workflow must be disabled by the task center master control: %#v", body)
+	}
+	if enabled, _ := body["enable_subagent"].(bool); enabled {
+		t.Fatalf("subagents must be disabled by the task center master control: %#v", body)
+	}
+	agentConfig := body["agentic_config"].(map[string]any)
+	if agentConfig["enable_workflow"] != false || agentConfig["enable_subagent"] != false {
+		t.Fatalf("agentic config must use the same effective controls: %#v", agentConfig)
 	}
 }
 
@@ -379,6 +485,31 @@ func TestBuildLazyChatRequestPreservesDatasetListFilters(t *testing.T) {
 
 	if req.Retrieval.Filters == nil || len(req.Retrieval.Filters.DatasetIDs) != 1 || req.Retrieval.Filters.DatasetIDs[0] != "ds_1" {
 		t.Fatalf("unexpected retrieval filters: %#v", req.Retrieval.Filters)
+	}
+}
+
+func TestBuildChatRequestBodyScopesDocumentPreviewRetrieval(t *testing.T) {
+	body := buildChatRequestBody(context.TODO(), nil, "conv-1", "", "explain", nil, map[string]any{
+		"conversation": map[string]any{
+			"search_config": map[string]any{
+				"dataset_list": []any{map[string]any{"id": "kb-1"}},
+			},
+		},
+		"document_context": map[string]any{"document_id": "doc-1"},
+	}, nil, "", 1)
+
+	filters, ok := body["filters"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected filters map, got %T", body["filters"])
+	}
+	docIDs, ok := filters["doc_id"].([]string)
+	if !ok || len(docIDs) != 1 || docIDs[0] != "doc-1" {
+		t.Fatalf("unexpected doc_id filter: %#v", filters["doc_id"])
+	}
+
+	req := buildLazyChatRequest(body)
+	if req.Retrieval.Filters == nil || len(req.Retrieval.Filters.DocumentIDs) != 1 || req.Retrieval.Filters.DocumentIDs[0] != "doc-1" {
+		t.Fatalf("unexpected document retrieval filters: %#v", req.Retrieval.Filters)
 	}
 }
 
@@ -585,6 +716,25 @@ func TestBuildChatHistoryExtPreservesMultimodalInput(t *testing.T) {
 	}
 	if got := payload.Input[1]["input_base64"]; got != "data:image/jpeg;base64,/9j/abc" {
 		t.Fatalf("expected image base64 to be preserved, got %#v", got)
+	}
+}
+
+func TestBuildChatHistoryExtPreservesDocumentSelectionContext(t *testing.T) {
+	ext := buildChatHistoryExt(map[string]any{
+		"input": []any{map[string]any{"input_type": "text", "text": "explain"}},
+		"document_context": map[string]any{
+			"document_id": "doc-1", "segment_id": "seg-2", "page": float64(3),
+		},
+	}, "explain")
+	var payload struct {
+		DocumentContext map[string]any `json:"document_context"`
+	}
+	if err := json.Unmarshal(ext, &payload); err != nil {
+		t.Fatalf("unmarshal ext: %v", err)
+	}
+	if payload.DocumentContext["document_id"] != "doc-1" ||
+		payload.DocumentContext["segment_id"] != "seg-2" {
+		t.Fatalf("document context was not preserved: %#v", payload.DocumentContext)
 	}
 }
 
