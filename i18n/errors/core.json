@@ -1440,7 +1440,9 @@
   "2002302": { "en-US": "Editable content exceeds the 2 MiB limit", "zh-CN": "可编辑内容超过 2 MiB 限制" },
   "2002303": { "en-US": "The editable block changed; refresh and retry", "zh-CN": "可编辑内容已发生变化，请刷新后重试" },
   "2002304": { "en-US": "Failed to save the editable block", "zh-CN": "保存可编辑内容失败" },
-  "2002305": { "en-US": "Temporary upload exceeds the 100 MiB file limit", "zh-CN": "临时上传文件超过 100 MiB 限制" },
-  "2002306": { "en-US": "Temporary upload part exceeds the 100 MiB file limit", "zh-CN": "临时上传分片超过 100 MiB 限制" },
-  "2002307": { "en-US": "Temporary upload part exceeds its declared size", "zh-CN": "临时上传分片超过声明大小" }
+  "2002305": { "en-US": "Skill name cannot exceed 80 characters", "zh-CN": "技能名称不能超过 80 个字符" },
+  "2002306": { "en-US": "Skill description cannot exceed 1024 characters", "zh-CN": "技能描述不能超过 1024 个字符" },
+  "2002307": { "en-US": "Temporary upload exceeds the 100 MiB file limit", "zh-CN": "临时上传文件超过 100 MiB 限制" },
+  "2002308": { "en-US": "Temporary upload part exceeds the 100 MiB file limit", "zh-CN": "临时上传分片超过 100 MiB 文件限制" },
+  "2002309": { "en-US": "Temporary upload part exceeds its declared size", "zh-CN": "临时上传分片超过声明大小" }
 }

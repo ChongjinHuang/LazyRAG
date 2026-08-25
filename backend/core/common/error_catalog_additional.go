@@ -375,6 +375,8 @@ func init() {
 	registerAdditionalErrorPattern("skill package contains duplicate path %q", "Invalid skill package", http.StatusBadRequest, 2002294)
 	registerAdditionalErrorPattern("skill package file %q exceeds %d bytes", "Invalid skill package", http.StatusBadRequest, 2002294)
 	registerAdditionalErrorPattern("skill package exceeds %d uncompressed bytes", "Invalid skill package", http.StatusBadRequest, 2002294)
+	registerAdditionalErrorPattern("skill name cannot exceed %d characters", "Skill name cannot exceed 80 characters", http.StatusBadRequest, 2002305)
+	registerAdditionalErrorPattern("skill description cannot exceed %d characters", "Skill description cannot exceed 1024 characters", http.StatusBadRequest, 2002306)
 
 	// Personal recovery and archive lifecycle errors.
 	registerAdditionalError("query archive folders failed", http.StatusInternalServerError, 2002098)
@@ -584,9 +586,9 @@ func init() {
 	registerAdditionalError("editable content exceeds the 2 mib limit", http.StatusBadRequest, 2002302)
 	registerAdditionalError("editable block changed; refresh and retry", http.StatusConflict, 2002303)
 	registerAdditionalError("save editable block failed", http.StatusInternalServerError, 2002304)
-	registerAdditionalError("temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002305)
-	registerAdditionalError("temporary upload part exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002306)
-	registerAdditionalError("temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge, 2002307)
+	registerAdditionalError("temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002307)
+	registerAdditionalError("temporary upload part exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002308)
+	registerAdditionalError("temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge, 2002309)
 }
 
 func registerAdditionalError(message string, status, code int) {
