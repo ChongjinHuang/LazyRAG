@@ -21,5 +21,4 @@ bundled_skills:
     path: search/sciverse-paper-search
     category: search
     version: 1.0.0
-skills:
-  - https://skillhub.cn/skills/user_1a7e2e57/cangjie-distill
+skills: []
