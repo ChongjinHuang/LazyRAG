@@ -21,5 +21,11 @@ bundled_skills:
     path: search/sciverse-paper-search
     category: search
     version: 1.0.0
-skills:
-  - https://raw.githubusercontent.com/ChongjinHuang/LazyRAG/aca3fce5e19a6f90909b13dd41b9f3178442040f/skill-source-archives/data-report-0.1.0.zip
+  # Vendored unchanged from the upstream Skill directory because the bundler
+  # intentionally does not scrape GitHub subdirectories.
+  # https://github.com/nexu-io/open-design/tree/7ecd35a746317983d2d0b4ab79293ab5d0d58d91/plugins/_official/examples/data-report
+  - uid: bsk_7B5BC8E695178B42EFD7B52ED3D2
+    path: third-party/data-report
+    category: data
+    version: 0.1.0
+skills: []
