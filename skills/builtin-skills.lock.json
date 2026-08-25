@@ -77,21 +77,6 @@
       "package_file": "packages/bsk_01K0M8SCV7PAPERSEARCH9Q2X3A4B.zip"
     },
     {
-      "key": "xiaohongshu-copywriter-plus",
-      "uid": "bsk_57A96CE818B5BC89ACAF8EEAC14D",
-      "source_url": "builtin://third-party/xiaohongshu-copywriter-plus",
-      "resolved_url": "builtin://third-party/xiaohongshu-copywriter-plus",
-      "version": "1.0.0",
-      "name": "xiaohongshu-copywriter",
-      "description": "小红书爆款种草文案生成器。一键生成高点击率、高收藏率的小红书种草笔记，自带10套爆款标题公式、六段式正文结构、emoji排版、话题标签推荐和发布策略，适用于美妆、护肤、穿搭、美食、家居、数码、母婴等品类。当用户需要撰写小红书种草笔记、产品推广文案、小红书营销内容、种草推荐文时触发此技能。",
-      "category": "external",
-      "market_visible": true,
-      "archive_sha256": "fc97566b24189b9ab4238ded926bce4a0883bfb394a09b3b4b4fa66494cecc9e",
-      "tree_sha256": "de940e3328b9dabb0501df4246ca8dca2bb7bb8527faeef68a6aae3f81e1d763",
-      "archive_size": 14796,
-      "package_file": "packages/bsk_57A96CE818B5BC89ACAF8EEAC14D.zip"
-    },
-    {
       "key": "user_7c4df347/gaokao-volunteer-advisor",
       "uid": "bsk_C8C501AEDCEC9283F2C9F9F59AD8",
       "source_url": "https://skillhub.cn/skills/user_7c4df347/gaokao-volunteer-advisor",
@@ -142,6 +127,21 @@
       "tree_sha256": "1aef731597db76401e1732845581c241068ecd6e30e458ad5343767f67158af5",
       "archive_size": 49861,
       "package_file": "packages/bsk_8540F063D5202C3CE7D9B6F93366.zip"
+    },
+    {
+      "key": "skill",
+      "uid": "bsk_3DAD0016C2AC0817C61F3533A3EB",
+      "source_url": "builtin://featured/xiaohongshu-copywriter/skill",
+      "resolved_url": "builtin://featured/xiaohongshu-copywriter/skill",
+      "version": "1.0.0",
+      "name": "xiaohongshu-copywriter",
+      "description": "小红书爆款种草文案生成器。一键生成高点击率、高收藏率的小红书种草笔记，自带10套爆款标题公式、六段式正文结构、emoji排版、话题标签推荐和发布策略，适用于美妆、护肤、穿搭、美食、家居、数码、母婴等品类。当用户需要撰写小红书种草笔记、产品推广文案、小红书营销内容、种草推荐文时触发此技能。",
+      "category": "external",
+      "market_visible": false,
+      "archive_sha256": "fc97566b24189b9ab4238ded926bce4a0883bfb394a09b3b4b4fa66494cecc9e",
+      "tree_sha256": "de940e3328b9dabb0501df4246ca8dca2bb7bb8527faeef68a6aae3f81e1d763",
+      "archive_size": 14796,
+      "package_file": "packages/bsk_3DAD0016C2AC0817C61F3533A3EB.zip"
     }
   ]
 }
