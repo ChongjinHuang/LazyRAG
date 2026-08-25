@@ -581,9 +581,12 @@ func init() {
 	registerAdditionalError("installed Skill distribution baseline is unavailable", http.StatusConflict, 2002299)
 	registerAdditionalError("distribution upgrade conflicts require draft review", http.StatusConflict, 2002300)
 	registerAdditionalError("distribution upgrade draft is active", http.StatusConflict, 2002301)
-	registerAdditionalError("temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002302)
-	registerAdditionalError("temporary upload part exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002303)
-	registerAdditionalError("temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge, 2002304)
+	registerAdditionalError("editable content exceeds the 2 mib limit", http.StatusBadRequest, 2002302)
+	registerAdditionalError("editable block changed; refresh and retry", http.StatusConflict, 2002303)
+	registerAdditionalError("save editable block failed", http.StatusInternalServerError, 2002304)
+	registerAdditionalError("temporary upload exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002305)
+	registerAdditionalError("temporary upload part exceeds the 100 MiB file limit", http.StatusRequestEntityTooLarge, 2002306)
+	registerAdditionalError("temporary upload part exceeds its declared size", http.StatusRequestEntityTooLarge, 2002307)
 }
 
 func registerAdditionalError(message string, status, code int) {
