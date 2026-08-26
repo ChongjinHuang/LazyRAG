@@ -46,7 +46,7 @@ interface FileItem extends RcFile {
 }
 
 export const allowedImageTypes = [".png", ".jpg", ".jpeg"];
-export const allowedFileTypes = [".pdf", ".docx", ".doc", ".pptx", ".xls", ".xlsx"];
+export const allowedFileTypes = [".pdf", ".docx", ".doc", ".pptx"];
 // Keep this list aligned with algorithm CHAT_TEXT_EXTENSIONS and core common textFileExtensions.
 export const allowedTextTypes = [
   ".txt", ".md", ".markdown", ".lmd", ".csv", ".tsv", ".json", ".jsonl", ".ndjson",

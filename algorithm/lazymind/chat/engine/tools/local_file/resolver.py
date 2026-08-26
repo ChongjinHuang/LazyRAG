@@ -12,7 +12,6 @@ import lazyllm
 from lazymind.chat.engine.attachment_reader import (
     is_chat_document_file,
     is_chat_image_file,
-    is_chat_spreadsheet_file,
     is_chat_text_file,
     parse_attachment_content,
 )
@@ -32,13 +31,7 @@ class ResolvedTextResource:
     target: str
     path: str
     display_name: str
-    kind: Literal[
-        'file_resource',
-        'attachment_text',
-        'attachment_document',
-        'attachment_spreadsheet',
-        'workspace',
-    ]
+    kind: Literal['file_resource', 'attachment_text', 'attachment_document', 'workspace']
     workspace: str
     file_id: Optional[str] = None
 
@@ -201,17 +194,13 @@ def _resolved_from_local_file(
             kind='attachment_text',
             workspace=workspace,
         )
-    if is_chat_document_file(source) or is_chat_spreadsheet_file(source):
+    if is_chat_document_file(source):
         parsed_path = _materialize_document_text(source, workspace)
         return ResolvedTextResource(
             target=target,
             path=parsed_path,
             display_name=display_name,
-            kind=(
-                'attachment_spreadsheet'
-                if is_chat_spreadsheet_file(source)
-                else 'attachment_document'
-            ),
+            kind='attachment_document',
             workspace=workspace,
         )
     raise ValueError(f"unsupported attachment type: {Path(source).suffix or '(none)'}")
@@ -327,16 +316,12 @@ def resolve_text_target(
         return resolve_text_target(str(manifest.get('file_id')))
     elif is_chat_image_file(resolved):
         raise ValueError('images are not text targets; use an image or vision tool')
-    elif is_chat_document_file(resolved) or is_chat_spreadsheet_file(resolved):
+    elif is_chat_document_file(resolved):
         return ResolvedTextResource(
             target=key,
             path=_materialize_document_text(resolved, workspace),
             display_name=os.path.basename(resolved),
-            kind=(
-                'attachment_spreadsheet'
-                if is_chat_spreadsheet_file(resolved)
-                else 'attachment_document'
-            ),
+            kind='attachment_document',
             workspace=workspace,
         )
     return ResolvedTextResource(

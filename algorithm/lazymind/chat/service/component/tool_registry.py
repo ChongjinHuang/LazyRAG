@@ -114,7 +114,7 @@ ATTACHED_FILES_TOOL_POLICY_APPENDIX: SystemPromptAppendix = {
         '- `read_user_attachment(filename, turn=N)`: transitional compatibility reader. '
         'Prefer `grep(target, pattern)` and `read_file(target, offset, limit)` for document text; '
         'image descriptions remain available through this compatibility tool.\n'
-        'Supported uploads: images, pdf/doc/docx/pptx, xls/xlsx, and common plain-text/code/config files.\n'
+        'Supported uploads: images, pdf/doc/docx/pptx, and common plain-text/code/config files.\n'
         '- Default to the current turn (marked 当前轮次) when the user says '
         '"this image / 这张图 / 这个文件" without naming a turn.\n'
         '- For uploaded whitelist documents, prefer `kb_tmp_search` then `read_file`. '

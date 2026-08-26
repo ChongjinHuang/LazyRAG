@@ -1,7 +1,5 @@
 from pathlib import Path
 
-import pandas as pd
-
 import lazymind.chat.engine.tools.local_file.workspace as workspace_tools
 from lazymind.chat.engine.subagent.runner import _build_subagent_tools
 from lazymind.chat.engine.tools.local_file import resolver
@@ -133,22 +131,6 @@ def test_office_attachment_parse_is_cached_by_content(monkeypatch, tmp_path):
     assert second['success'] is True
     assert calls == [str(attachment)]
     assert list((tmp_path / 'attachment-text-cache').glob('*/parsed.txt'))
-
-
-def test_spreadsheet_attachment_uses_unified_read_file(monkeypatch, tmp_path):
-    attachment = tmp_path / 'report.xlsx'
-    pd.DataFrame({
-        'month': ['2026-01', '2026-02'],
-        'revenue': [120000, 138000],
-    }).to_excel(attachment, index=False)
-    _set_scope(monkeypatch, tmp_path, files=[attachment])
-
-    result = workspace_tools.read_file('report.xlsx')
-
-    assert result['success'] is True
-    assert result['result']['kind'] == 'attachment_spreadsheet'
-    assert 'revenue,2,258000,129000,120000,138000' in result['result']['text']
-    assert '2026-02,138000' in result['result']['text']
 
 
 def test_duplicate_resource_name_is_rejected(monkeypatch, tmp_path):

@@ -10,7 +10,6 @@ from typing_extensions import NotRequired, TypedDict
 from lazymind.chat.engine.attachment_reader import (
     is_chat_attachment_file,
     is_chat_image_file,
-    is_chat_spreadsheet_file,
     is_chat_text_file,
     parse_attachment_content,
 )
@@ -1210,7 +1209,7 @@ def read_user_attachment(filename: str, turn: Optional[int] = None) -> Dict[str,
         raise ToolExecutionError(
             (
                 f"Unsupported file type '{os.path.splitext(matched)[1].lower() or '(no extension)'}'. "
-                'Supported: images, Office/PDF documents, Excel spreadsheets, and common plain-text files.'
+                'Supported: images, Office/PDF documents, and common plain-text files.'
             )
         )
     try:
@@ -1243,9 +1242,7 @@ def read_user_attachment(filename: str, turn: Optional[int] = None) -> Dict[str,
         'status': 'ok',
         'filename': os.path.basename(matched),
         'path': matched,
-        'kind': 'text' if is_chat_text_file(matched) else (
-            'spreadsheet' if is_chat_spreadsheet_file(matched) else 'document'
-        ),
+        'kind': 'text' if is_chat_text_file(matched) else 'document',
         'content': payload.get('text', ''),
         'offset': payload.get('offset'),
         'end_line': payload.get('end_line'),
