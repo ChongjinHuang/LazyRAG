@@ -1,13 +1,13 @@
 schema_version: 2
 id: smart-charts
 type: work
-version: 6.2.0
+version: 6.2.1
 status: published
 default_locale: zh-CN
 
 skill:
   source_url: https://skillhub.cn/skills/user_5b28ea14/smart-charts
-  required_version: 6.2.0
+  required_version: 6.2.1
 
 placement:
   home: true

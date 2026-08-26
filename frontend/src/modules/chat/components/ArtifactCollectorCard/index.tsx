@@ -1,10 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Button, Checkbox, Modal, Tabs, Tooltip, message } from "antd";
+import { Button, Checkbox, Tabs, message } from "antd";
 import {
   DownloadOutlined,
   FileTextOutlined,
   CloseOutlined,
-  EyeOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import JSZip from "@progress/jszip-esm";
@@ -32,33 +31,6 @@ interface ArtifactFile {
 }
 
 type ArtifactScope = "turn" | "conversation";
-
-const HTML_PREVIEW_CSP = [
-  "default-src 'none'",
-  "script-src 'unsafe-inline' https://cdn.jsdelivr.net https://unpkg.com",
-  "style-src 'unsafe-inline'",
-  "img-src data: blob:",
-  "font-src data:",
-  "connect-src 'none'",
-  "media-src 'none'",
-  "object-src 'none'",
-  "frame-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join("; ");
-
-function isHtmlArtifact(file: ArtifactFile): boolean {
-  return /\.html?$/i.test(file.filename);
-}
-
-function sandboxHtmlDocument(source: string): string {
-  const parsed = new DOMParser().parseFromString(source, "text/html");
-  const policy = parsed.createElement("meta");
-  policy.httpEquiv = "Content-Security-Policy";
-  policy.content = HTML_PREVIEW_CSP;
-  parsed.head.prepend(policy);
-  return `<!doctype html>${parsed.documentElement.outerHTML}`;
-}
 
 interface Props {
   sessionId: string;
@@ -167,11 +139,6 @@ export default function ArtifactCollectorCard({
   const [scope, setScope] = useState<ArtifactScope>("turn");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [downloading, setDownloading] = useState(false);
-  const [preview, setPreview] = useState<{
-    filename: string;
-    html: string;
-  } | null>(null);
-  const [previewLoading, setPreviewLoading] = useState(false);
   const artifacts = useTaskCenterStore(
     (state) => state.artifactsByConversation[sessionId] ?? [],
   );
@@ -256,30 +223,6 @@ export default function ArtifactCollectorCard({
       downloadStream(blob, f.filename);
     },
     [downloadSingle, t],
-  );
-
-  const previewHtml = useCallback(
-    async (file: ArtifactFile) => {
-      if (!file.url || !isHtmlArtifact(file)) return;
-      setPreviewLoading(true);
-      try {
-        const response = await fetch(file.url);
-        if (!response.ok) throw new Error("preview fetch failed");
-        setPreview({
-          filename: file.filename,
-          html: sandboxHtmlDocument(await response.text()),
-        });
-      } catch {
-        message.error(
-          t("chat.artifactCollectorDownloadFailed", {
-            filename: file.filename,
-          }),
-        );
-      } finally {
-        setPreviewLoading(false);
-      }
-    },
-    [t],
   );
 
   const downloadZip = useCallback(async (targetFiles: ArtifactFile[]) => {
@@ -442,20 +385,6 @@ export default function ArtifactCollectorCard({
                       </span>
                     )}
                   </div>
-                  {file.url && isHtmlArtifact(file) && (
-                    <Tooltip title={t("chat.markdownHtmlPreview")}>
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EyeOutlined />}
-                        loading={previewLoading}
-                        onClick={() => void previewHtml(file)}
-                        aria-label={`${t("chat.markdownHtmlPreview")} ${
-                          file.filename
-                        }`}
-                      />
-                    </Tooltip>
-                  )}
                   <Button
                     type="link"
                     size="small"
@@ -481,23 +410,6 @@ export default function ArtifactCollectorCard({
           </div>
         </>
       )}
-      <Modal
-        open={Boolean(preview)}
-        title={preview?.filename}
-        width="min(1100px, 94vw)"
-        footer={null}
-        destroyOnHidden
-        onCancel={() => setPreview(null)}
-      >
-        {preview && (
-          <iframe
-            title={preview.filename}
-            sandbox="allow-scripts"
-            srcDoc={preview.html}
-            style={{ width: "100%", height: "72vh", border: 0 }}
-          />
-        )}
-      </Modal>
     </div>
   );
 }

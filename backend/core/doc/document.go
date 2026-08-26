@@ -410,14 +410,7 @@ func streamLocalFile(w http.ResponseWriter, fullPath, filename, fallbackContentT
 		name = filepath.Base(cleanPath)
 	}
 	contentType := detectDocumentContentType(name, cleanPath, fallbackContentType)
-	if isHTMLDocument(name, cleanPath, contentType) {
-		// Generated HTML is an active document. It must never inherit the LazyMind
-		// origin merely because a caller opened a signed file URL directly.
-		inline = false
-		w.Header().Set("Content-Security-Policy", "sandbox; default-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'")
-	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Length", strconv.FormatInt(stat.Size(), 10))
 	w.Header().Set("Cache-Control", "private, max-age=300")
 	w.Header().Del("ETag")
@@ -429,14 +422,6 @@ func streamLocalFile(w http.ResponseWriter, fullPath, filename, fallbackContentT
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, f)
-}
-
-func isHTMLDocument(name, storedPath, contentType string) bool {
-	if strings.EqualFold(filepath.Ext(name), ".html") || strings.EqualFold(filepath.Ext(name), ".htm") ||
-		strings.EqualFold(filepath.Ext(storedPath), ".html") || strings.EqualFold(filepath.Ext(storedPath), ".htm") {
-		return true
-	}
-	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "text/html")
 }
 
 func contentDispositionHeader(disposition, filename string) string {
