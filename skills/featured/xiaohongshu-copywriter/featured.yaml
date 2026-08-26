@@ -37,7 +37,7 @@ presentation:
     result_summary: 输出可直接编辑的标题、六段式正文、Emoji 排版、话题标签和发布策略
   detail:
     title: 小红书文案生成
-    description: 围绕产品卖点和目标人群生成自然可信的小红书笔记，包含标题、正文结构、Emoji、标签和发布建议。
+    description: 围绕产品卖点和目标人群生成自然可信的小红书笔记，包含标题、正文结构、Emoji、标签和发布建议。来源：SkillHub 原“小红书文案生成 Plus”（原链接已失效），经 LazyMind 适配。
     attachment_hint: 产品资料、卖点清单、目标人群或参考图片
 
 tasks:
