@@ -54,11 +54,12 @@ tasks:
   - id: poster-critique
     selector:
       title: Poster critique and optimization
-      description: Analyze hierarchy, typography, color, and visual consistency in an existing poster
+      description: Diagnose a "Weekend Market" mobile poster's hierarchy and layout
       output_label: Poster improvement plan
     launch:
-      prompt_short: Diagnose and improve this poster.
-      prompt: Analyze the poster and usage context I provide across theme, information hierarchy, alignment, typography, color, negative space, rhythm, and readability. Explain the highest-impact issues, causes, and priorities, then provide a concrete optimization plan that preserves the core content.
+      prompt_short: 'Example: diagnose a "Weekend Market 10:00-18:00" mobile poster.'
+      prompt: >-
+        Diagnose this sample poster: title "Weekend Market", subtitle "10:00-18:00", location "Shanghai Jing'an Kerry Centre", canvas 1080x1440, aiming to attract young office workers in a mobile feed. Review theme expression, information hierarchy, alignment, typography, color, negative space, rhythm, and readability; explain the highest-impact issues and provide a prioritized optimization plan that keeps the copy unchanged.
     replay:
       steps:
         - title: Identify the communication goal

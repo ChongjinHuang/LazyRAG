@@ -50,11 +50,12 @@ tasks:
   - id: behavioral-interview
     selector:
       title: Behavioral interview practice
-      description: Practice experience and scenario questions using STAR
+      description: Practice a STAR answer about disagreeing with the engineering team
       output_label: Behavioral interview feedback
     launch:
-      prompt_short: Help me practice behavioral interviews and STAR answers.
-      prompt: Act as a behavioral interviewer and ask one question at a time based on my experience and target role. After each answer, check the situation, task, action, and result, assess whether the example is concrete and credible, and suggest a stronger structure and follow-up questions. Finish by identifying gaps in my story bank.
+      prompt_short: 'Example: practice a STAR answer about disagreeing with the engineering team.'
+      prompt: >-
+        Start a behavioral interview from this sample story: "Before a release, I disagreed with the engineering team about delivery scope; we split the phase-one scope, shipped on time, and conversion improved by 8%." The target role is senior product manager. Ask one question at a time; after each answer, check the situation, task, action, and result, assess whether the example is concrete and credible, and suggest a stronger structure and follow-up questions. Finish by summarizing the stories still missing from my story bank.
     replay:
       steps:
         - title: Inventory experience stories
@@ -78,11 +79,12 @@ tasks:
   - id: resume-interview
     selector:
       title: Resume deep dive
-      description: Probe project responsibilities, decisions, and outcomes from a resume
+      description: Probe the enterprise knowledge-base QA project's ownership and results
       output_label: Resume deep-dive feedback
     launch:
-      prompt_short: Run a project deep-dive interview from my resume.
-      prompt: Read my resume and probe project experience, scope of responsibility, key decisions, technical or business challenges, and measurable outcomes. Ask one question at a time, identify vague statements, weak evidence, or likely follow-ups after every answer, and help me form more precise responses.
+      prompt_short: 'Example: deep-dive the "enterprise knowledge-base QA" project on my resume.'
+      prompt: >-
+        Start a resume deep-dive from this sample project: "Owned an enterprise knowledge-base QA product, led a team of four, and raised first-answer hit rate from 62% to 78% in three months." Probe scope of responsibility, key decisions, technical or business challenges, and measurable outcomes one question at a time; after every answer, identify vague statements, weak evidence, or likely follow-ups, and help me form more precise responses.
     replay:
       steps:
         - title: Identify priority experience

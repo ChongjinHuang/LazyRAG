@@ -74,11 +74,11 @@ tasks:
   - id: distill-chapter
     selector:
       title: 章节方法提炼
-      description: 从重点章节提炼一项可立即使用的方法
+      description: 以“会议纪要写作”章节为例提炼一张执行卡
       output_label: 方法执行卡
     launch:
-      prompt_short: 从这个章节提炼一项可以立即使用的方法。
-      prompt: 请分析我提供的章节，找出其中最有迁移价值的方法，区分原理与操作，将其整理成包含适用场景、前置条件、逐步动作、检查项和常见误区的执行卡。
+      prompt_short: 示例：从“会议纪要写作”章节提炼一张执行卡。
+      prompt: 请用以下示例章节摘要提炼方法：“会议纪要先写结论，再按决定、待办、风险分组；每项待办必须有负责人和截止日期。”区分原理与操作，整理成包含适用场景、前置条件、逐步动作、检查项和常见误区的执行卡。
     replay:
       steps:
         - title: 识别章节目标
@@ -102,11 +102,11 @@ tasks:
   - id: skill-draft
     selector:
       title: 生成 Skill 草案
-      description: 把已提炼的方法写成标准 SKILL.md 草案
+      description: 把“结论先行会议纪要”方法写成标准 SKILL.md
       output_label: SKILL.md 草案
     launch:
-      prompt_short: 把这套方法写成一份标准 SKILL.md 草案。
-      prompt: 请将我提供的方法论整理为标准 SKILL.md 草案，包含准确的名称、触发描述、适用和不适用范围、输入要求、执行流程、质量检查及必要参考资料。保持原方法的边界，不加入来源中没有依据的能力。
+      prompt_short: 示例：把“结论先行会议纪要”方法写成标准 SKILL.md。
+      prompt: 请将以下示例方法整理为标准 SKILL.md 草案：“会议纪要先写结论，再分决定、待办、风险；待办必须有负责人和截止日期。”包含准确名称、触发描述、适用和不适用范围、输入要求、执行流程、质量检查及必要参考资料，保持边界，不加入未提供的能力。
     replay:
       steps:
         - title: 核对方法边界

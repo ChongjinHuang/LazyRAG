@@ -51,11 +51,12 @@ tasks:
   - id: distill-chapter
     selector:
       title: Extract a chapter method
-      description: Turn a selected chapter into one immediately useful method
+      description: Turn a "writing meeting minutes" chapter into one playbook
       output_label: Method playbook
     launch:
-      prompt_short: Extract one immediately useful method from this chapter.
-      prompt: Analyze the supplied chapter, identify its most transferable method, separate principle from procedure, and organize it into a playbook with scenarios, prerequisites, step-by-step actions, checks, and common failure modes.
+      prompt_short: 'Example: extract one playbook from a "writing meeting minutes" chapter.'
+      prompt: >-
+        Extract the method from this sample chapter summary: "Write meeting minutes with the conclusion first, then group items as decisions, action items, and risks; every action item must have an owner and a due date." Separate principle from procedure and organize it into a playbook with scenarios, prerequisites, step-by-step actions, checks, and common failure modes.
     replay:
       steps:
         - title: Identify the chapter goal
@@ -79,11 +80,12 @@ tasks:
   - id: skill-draft
     selector:
       title: Generate a Skill draft
-      description: Turn an extracted method into a standard SKILL.md draft
+      description: Turn the conclusion-first minutes method into a SKILL.md
       output_label: SKILL.md draft
     launch:
-      prompt_short: Turn this method into a standard SKILL.md draft.
-      prompt: Convert the supplied methodology into a standard SKILL.md draft with an accurate name, trigger description, supported and unsupported scopes, input requirements, execution flow, quality checks, and required references. Preserve the method's boundaries and do not add unsupported capabilities.
+      prompt_short: 'Example: turn the "conclusion-first minutes" method into a standard SKILL.md.'
+      prompt: >-
+        Convert this sample method into a standard SKILL.md draft: "Write meeting minutes with the conclusion first, then group decisions, action items, and risks; every action item must have an owner and a due date." Include an accurate name, trigger description, supported and unsupported scopes, input requirements, execution flow, quality checks, and required references. Preserve the method's boundaries and do not add unsupported capabilities.
     replay:
       steps:
         - title: Confirm method boundaries

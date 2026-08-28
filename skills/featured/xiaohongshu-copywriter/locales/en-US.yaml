@@ -42,24 +42,21 @@ tasks:
         - title: Complete publishing strategy
           description: Add emojis, tags, a first comment, and timing advice
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Xiaohongshu recommendation post
       title: Five-minute office breakfast post
       summary: Balance concrete specifications, honest limitations, and platform-native publishing details
-      highlights:
-        - Five commute-scenario titles
-        - Benefits and limitations together
-        - Tags, first comment, and posting time
-      image_asset: blender_note
+      html_asset: blender_output
 
   - id: rewrite-note
     selector:
       title: Rewrite and optimize a post
-      description: Improve the title, pacing, credibility, and engagement of existing copy
+      description: Turn a vague "the blender is great" draft into a credible post
       output_label: Optimized post
     launch:
-      prompt_short: Improve this Xiaohongshu post.
-      prompt: Analyze the Xiaohongshu post I provide, preserve its facts and personal voice, and improve the title, opening hook, pacing, information density, emojis, and topic tags. Identify vague or exaggerated claims that reduce credibility and provide a complete rewrite.
+      prompt_short: 'Example: turn "the blender cup is great, breakfast is easier" into a credible Xiaohongshu post.'
+      prompt: >-
+        Optimize this sample draft: "The blender cup works great, breakfast check-ins are more convenient, and everyone says it is worth buying." Known product facts: 380 ml, 520 g, 40-second blending, USB-C charging, and a detachable cup for cleaning; the audience is commuting office workers. Preserve the facts and personal voice while improving the title hook, opening, pacing, information density, emojis, and topic tags. Point out vague or exaggerated claims and deliver a complete rewrite.
     replay:
       steps:
         - title: Diagnose the draft
@@ -71,11 +68,8 @@ tasks:
         - title: Deliver the rewrite
           description: Produce a complete version ready for further editing
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Optimized post
       title: More natural and engaging Xiaohongshu copy
       summary: Improve the title, pacing, and engagement while preserving facts and personal voice
-      highlights:
-        - Draft diagnosis
-        - Title and opening-hook improvements
-        - Complete rewrite and tag suggestions
+      html_asset: rewrite_output

@@ -50,11 +50,12 @@ tasks:
   - id: comparison-chart
     selector:
       title: Comparison chart
-      description: Compare metrics across categories, regions, or products
+      description: Compare revenue and orders across East, South, and North China
       output_label: Comparison analysis chart
     launch:
-      prompt_short: Create a category comparison chart from my uploaded data.
-      prompt: Read the uploaded table, identify categorical dimensions and numeric metrics, choose an appropriate bar, stacked, or combination chart, highlight rankings and gaps, and deliver an interactive downloadable HTML visualization.
+      prompt_short: 'Example: compare revenue and orders across East, South, and North China.'
+      prompt: >-
+        Generate a category comparison chart from this sample data. Regions: East China, South China, North China. Revenue (CNY 10k): 320, 280, 210. Orders: 8400, 7600, 5900. Identify the categorical dimension and numeric metrics, choose a suitable bar or combination chart, highlight rankings, gaps, and key conclusions, and deliver an interactive downloadable HTML visualization.
     replay:
       steps:
         - title: Identify comparison dimensions
@@ -78,11 +79,12 @@ tasks:
   - id: distribution-chart
     selector:
       title: Distribution and composition
-      description: Analyze distributions, shares, and structural patterns
+      description: Analyze 12 order amounts and four channels' composition shares
       output_label: Distribution analysis chart
     launch:
-      prompt_short: Analyze distribution and composition in my uploaded data.
-      prompt: Read the uploaded data, identify useful distribution or composition relationships, choose a suitable histogram, scatter plot, pie chart, or treemap, explain concentrations and anomalies, and deliver an interactive downloadable HTML visualization.
+      prompt_short: 'Example: analyze the distribution of 12 order amounts and channel composition.'
+      prompt: >-
+        Analyze distribution and composition from this sample data. Order amounts (CNY): 89, 95, 102, 110, 118, 125, 130, 142, 155, 168, 420, 560. Orders by channel: organic search 42, livestream 28, community 18, paid ads 12. Choose a suitable histogram and composition chart, explain concentration ranges, shares, and anomalies, and deliver an interactive downloadable HTML visualization.
     replay:
       steps:
         - title: Inspect data characteristics

@@ -29,7 +29,7 @@ assets:
     file: assets/cover.png
     role: cover
   build_beyond_poster:
-    file: assets/build-beyond-poster.png
+    file: assets/poster-ai-conference.png
     role: result
 
 presentation:
@@ -78,11 +78,11 @@ tasks:
   - id: poster-critique
     selector:
       title: 海报诊断优化
-      description: 分析现有海报的层级、排版、色彩和视觉一致性
+      description: 诊断“周末市集”手机海报的层级、排版与色彩
       output_label: 海报优化建议
     launch:
-      prompt_short: 帮我诊断并优化这张海报。
-      prompt: 请分析我提供的海报和使用场景，从主题表达、信息层级、对齐、字体、色彩、留白、节奏和可读性逐项诊断。说明最影响效果的问题、原因和修改优先级，并给出一套保持核心内容不变的具体优化方案。
+      prompt_short: 示例：诊断一张“周末市集 10:00-18:00”手机海报。
+      prompt: 请以这张示例海报为对象进行诊断：标题“周末市集”，副标题“10:00-18:00”，地点“上海静安嘉里中心”，画布 1080×1440，目标是在手机信息流中吸引年轻上班族。请从主题表达、信息层级、对齐、字体、色彩、留白、节奏和可读性逐项诊断，并给出保持文案不变的修改优先级。
     replay:
       steps:
         - title: 识别传播目标

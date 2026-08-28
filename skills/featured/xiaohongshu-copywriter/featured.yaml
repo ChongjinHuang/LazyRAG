@@ -31,6 +31,12 @@ assets:
   blender_note:
     file: assets/portable-blender-note.gif
     role: result
+  blender_output:
+    file: assets/portable-blender-output.html
+    role: result
+  rewrite_output:
+    file: assets/rewrite-note-output.html
+    role: result
 
 presentation:
   card:
@@ -65,24 +71,20 @@ tasks:
         - title: 完善发布策略
           description: 补充 Emoji、标签、首评和发布时间建议
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 小红书种草笔记
       title: 5 分钟办公室早餐笔记
       summary: 兼顾具体参数、真实限制、发布节奏和平台表达的完整成稿
-      highlights:
-        - 5 个通勤场景标题
-        - 卖点与限制并列说明
-        - 标签、首评和发布时间
-      image_asset: blender_note
+      html_asset: blender_output
 
   - id: rewrite-note
     selector:
       title: 笔记改写优化
-      description: 优化现有文案的标题、节奏、可信度和互动性
+      description: 把“榨汁杯很好用”空泛原稿改成可信小红书笔记
       output_label: 优化后笔记
     launch:
-      prompt_short: 帮我优化这篇小红书笔记。
-      prompt: 请分析我提供的小红书笔记，保留事实和个人语气，优化标题吸引力、开头钩子、段落节奏、信息密度、Emoji 和话题标签。指出原稿中空泛、夸张或可能降低可信度的表达，并给出一版完整改写。
+      prompt_short: 示例：把“榨汁杯很好用，打卡早餐更方便”改成可信的小红书笔记。
+      prompt: 请使用这段示例原稿进行优化：“榨汁杯很好用，打卡早餐更方便，大家都说值得买。”已知产品事实为 380ml、520g、40 秒搅打、USB-C 充电、杯体可拆洗，目标人群是通勤上班族。保留事实和个人语气，优化标题吸引力、开头钩子、段落节奏、信息密度、Emoji 和话题标签；指出空泛或夸张表达，并给出完整改写。
     replay:
       steps:
         - title: 诊断现有文案
@@ -94,11 +96,8 @@ tasks:
         - title: 输出完整改稿
           description: 交付可直接继续编辑的优化版本
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 优化后笔记
       title: 更自然、更有吸引力的小红书文案
       summary: 在保留事实和个人语气的前提下提升标题、节奏和互动性
-      highlights:
-        - 原稿问题诊断
-        - 标题与开头钩子优化
-        - 完整改写和标签建议
+      html_asset: rewrite_output
