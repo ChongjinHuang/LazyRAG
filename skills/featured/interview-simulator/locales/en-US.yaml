@@ -67,14 +67,11 @@ tasks:
         - title: Complete the story bank
           description: Produce reusable story themes and recommendations for missing examples
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Behavioral interview feedback
       title: STAR answer diagnosis and story bank
       summary: Improve the structure, evidence, and role relevance of experience-based answers
-      highlights:
-        - STAR completeness
-        - Evidence and personal contribution
-        - Missing stories to prepare
+      html_asset: behavioral_output
 
   - id: resume-interview
     selector:
@@ -96,11 +93,8 @@ tasks:
         - title: Organize answer points
           description: Produce accurate, concrete, and verifiable project responses
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Resume deep-dive feedback
       title: Project questions and risk areas
       summary: Organize evidence, likely follow-ups, and improvements for priority projects
-      highlights:
-        - High-probability follow-up questions
-        - Evidence for ownership, decisions, and outcomes
-        - Vague claims and answer improvements
+      html_asset: resume_output

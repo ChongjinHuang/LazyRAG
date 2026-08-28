@@ -31,6 +31,12 @@ assets:
   pyramid_map:
     file: assets/pyramid-method-map.html
     role: result
+  chapter_method:
+    file: assets/chapter-method-card.html
+    role: result
+  skill_draft:
+    file: assets/skill-draft.html
+    role: result
 
 presentation:
   card:
@@ -90,14 +96,11 @@ tasks:
         - title: 输出方法卡
           description: 形成可直接调用和复用的结构化方法
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 方法执行卡
       title: 章节核心方法与执行步骤
       summary: 从章节内容中提炼一项边界清晰、可立即应用的方法
-      highlights:
-        - 适用问题与触发条件
-        - 原理、步骤和检查项
-        - 常见误区与失败处理
+      html_asset: chapter_method
 
   - id: skill-draft
     selector:
@@ -118,11 +121,8 @@ tasks:
         - title: 输出 Skill 草案
           description: 生成结构完整、可继续评审的 SKILL.md
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: SKILL.md 草案
       title: 可复用方法 Skill 设计
       summary: 将方法论转换为具有清晰触发条件、步骤和质量标准的 Skill 草案
-      highlights:
-        - 名称与触发描述
-        - 使用边界和输入要求
-        - 执行步骤与质量检查
+      html_asset: skill_draft

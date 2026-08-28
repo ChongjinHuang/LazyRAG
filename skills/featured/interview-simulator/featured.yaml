@@ -31,6 +31,12 @@ assets:
   pm_interview:
     file: assets/product-manager-interview.html
     role: result
+  behavioral_output:
+    file: assets/behavioral-feedback.html
+    role: result
+  resume_output:
+    file: assets/resume-feedback.html
+    role: result
 
 presentation:
   card:
@@ -90,14 +96,11 @@ tasks:
         - title: 完善案例库
           description: 输出可复用的经历主题和补充建议
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 行为面试反馈
       title: STAR 回答诊断与案例库
       summary: 提升经历回答的结构、证据和岗位相关性
-      highlights:
-        - STAR 结构完整度
-        - 案例证据和个人贡献
-        - 待补充的经历案例库
+      html_asset: behavioral_output
 
   - id: resume-interview
     selector:
@@ -118,11 +121,8 @@ tasks:
         - title: 整理回答要点
           description: 形成准确、具体且可验证的项目回答
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 简历深挖反馈
       title: 项目经历问答与风险点
       summary: 梳理重点项目的回答证据、追问风险和表达改进方向
-      highlights:
-        - 高概率追问清单
-        - 职责、决策和结果证据
-        - 含糊表述与回答优化
+      html_asset: resume_output

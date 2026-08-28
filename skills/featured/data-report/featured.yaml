@@ -30,6 +30,15 @@ assets:
   commerce_dashboard:
     file: assets/commerce-dashboard.png
     role: result
+  cockpit_output:
+    file: assets/executive-cockpit.html
+    role: result
+  trend_output:
+    file: assets/trend-report.html
+    role: result
+  dimension_output:
+    file: assets/dimension-report.html
+    role: result
 
 presentation:
   card:
@@ -64,15 +73,11 @@ tasks:
         - title: 提炼业务动作
           description: 说明关键变化、判断限制和下一步建议
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 经营分析报告
       title: 2026 上半年电商经营分析
       summary: 从六个月经营数据生成 KPI 看板、趋势图和可执行建议
-      highlights:
-        - 收入、利润、订单量 KPI
-        - 趋势、利润率和效率分析
-        - 数据边界与经营建议
-      image_asset: commerce_dashboard
+      html_asset: cockpit_output
 
   - id: trend-report
     selector:
@@ -93,14 +98,11 @@ tasks:
         - title: 输出趋势结论
           description: 总结增长、下滑、波动和后续关注点
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 趋势分析报告
       title: 指标趋势、增长与异常
       summary: 聚焦时间序列变化，呈现增长区间、拐点和需要关注的异常
-      highlights:
-        - 时间范围与指标口径
-        - 增长率和关键拐点
-        - 异常变化与关注建议
+      html_asset: trend_output
 
   - id: dimension-report
     selector:
@@ -121,11 +123,8 @@ tasks:
         - title: 形成优化建议
           description: 识别高低表现分组和潜在改善方向
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 多维分析报告
       title: 分组表现与贡献结构
       summary: 比较不同业务维度的表现、贡献和改善机会
-      highlights:
-        - 分组指标与排名
-        - 贡献结构和表现差距
-        - 高低表现分组的行动建议
+      html_asset: dimension_output

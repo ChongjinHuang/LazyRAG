@@ -67,14 +67,11 @@ tasks:
         - title: Summarize findings
           description: Explain rankings, gaps, and the most useful observations
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Comparison analysis chart
       title: Category metrics and rankings
       summary: Present group differences, rankings, and key findings in an interactive chart
-      highlights:
-        - Category and metric mapping
-        - Ranking and gap comparison
-        - Interactive downloadable HTML
+      html_asset: comparison_output
 
   - id: distribution-chart
     selector:
@@ -96,11 +93,8 @@ tasks:
         - title: Generate the deliverable
           description: Produce a self-contained interactive HTML chart
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Distribution analysis chart
       title: Data distribution and structure
       summary: Show concentration ranges, category composition, and anomalous points
-      highlights:
-        - Distribution ranges and concentration
-        - Category composition and shares
-        - Anomalies and follow-up questions
+      html_asset: distribution_output

@@ -31,6 +31,12 @@ assets:
   build_beyond_poster:
     file: assets/poster-ai-conference.png
     role: result
+  poster_concept_output:
+    file: assets/poster-concept.html
+    role: result
+  poster_critique_output:
+    file: assets/poster-critique.html
+    role: result
 
 presentation:
   card:
@@ -65,15 +71,11 @@ tasks:
         - title: 渲染竖版成品
           description: 核验 1200×1600 尺寸、信息完整性和远读效果
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 海报设计方案
       title: BUILD BEYOND 大会海报
       summary: 用黑白、模块网格与强字阶呈现 AI 开发者大会主题
-      highlights:
-        - 黑白现代主义视觉系统
-        - BUILD BEYOND 强字阶
-        - 1200×1600 可交付成品
-      image_asset: build_beyond_poster
+      html_asset: poster_concept_output
 
   - id: poster-critique
     selector:
@@ -94,11 +96,8 @@ tasks:
         - title: 给出优化顺序
           description: 按影响程度整理可执行的修改方案
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 海报优化建议
       title: 视觉问题诊断与修改优先级
       summary: 在保留核心内容的前提下提升层级、可读性和整体一致性
-      highlights:
-        - 传播目标与视觉焦点
-        - 排版、色彩和留白问题
-        - 分优先级的具体修改方案
+      html_asset: poster_critique_output

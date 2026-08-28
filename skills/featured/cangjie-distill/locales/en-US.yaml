@@ -68,14 +68,11 @@ tasks:
         - title: Deliver the playbook
           description: Produce a structured method that can be reused directly
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Method playbook
       title: Core chapter method and execution steps
       summary: Extract a bounded, immediately applicable method from the chapter
-      highlights:
-        - Problem scope and triggers
-        - Principles, steps, and checks
-        - Common mistakes and failure handling
+      html_asset: chapter_method
 
   - id: skill-draft
     selector:
@@ -97,11 +94,8 @@ tasks:
         - title: Deliver the Skill draft
           description: Produce a complete SKILL.md ready for review
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: SKILL.md draft
       title: Reusable methodology Skill design
       summary: Convert the method into a Skill with clear triggers, steps, and quality standards
-      highlights:
-        - Name and trigger description
-        - Scope and input requirements
-        - Execution steps and quality checks
+      html_asset: skill_draft

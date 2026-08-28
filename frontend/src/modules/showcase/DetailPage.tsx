@@ -13,7 +13,6 @@ import {
   getShowcaseCase,
   type ShowcaseCase,
   type ShowcaseCaseResult,
-  type ShowcaseCaseTask,
 } from "./api";
 import { buildShowcaseLaunchPath } from "./classification";
 import "./index.scss";
@@ -115,12 +114,9 @@ function ProductReportResult({ result }: { result: ShowcaseCaseResult }) {
   );
 }
 
-function GenericResult({ result, steps }: {
+function GenericResult({ result }: {
   result: ShowcaseCaseResult;
-  steps: NonNullable<ShowcaseCaseTask["steps"]>;
 }) {
-  const { t } = useTranslation();
-
   return (
     <>
       <p className="showcase-document-eyebrow">{result.eyebrow}</p>
@@ -129,30 +125,6 @@ function GenericResult({ result, steps }: {
       {result.image_url ? (
         <img className="showcase-document-preview-image" src={result.image_url} alt="" />
       ) : null}
-      <div className="showcase-generic-result">
-        <section className="showcase-document-section">
-          <h3>{t("showcase.executionFlow")}</h3>
-          <ol>
-            {steps.map((step, index) => (
-              <li key={`${step.title}-${index}`}>
-                <span>{index + 1}</span>
-                <p><strong>{step.title}</strong>{step.description}</p>
-              </li>
-            ))}
-          </ol>
-        </section>
-        <section className="showcase-document-section showcase-document-mechanisms">
-          <h3>{t("showcase.youWillGet")}</h3>
-          <ul>
-            {result.highlights?.map((highlight, index) => (
-              <li key={highlight}>
-                <span>{String.fromCharCode(65 + index)}</span>
-                <p>{highlight}</p>
-              </li>
-            ))}
-          </ul>
-        </section>
-      </div>
     </>
   );
 }
@@ -173,9 +145,8 @@ function HTMLPreviewResult({ url, title }: {
   );
 }
 
-function ResultContent({ result, steps }: {
+function ResultContent({ result }: {
   result: ShowcaseCaseResult;
-  steps: NonNullable<ShowcaseCaseTask["steps"]>;
 }) {
   if (result.template === "html_preview_v1" && result.html_url) {
     return (
@@ -188,7 +159,7 @@ function ResultContent({ result, steps }: {
   if (result.template === "product_report_v1" && result.product_report) {
     return <ProductReportResult result={result} />;
   }
-  return <GenericResult result={result} steps={steps} />;
+  return <GenericResult result={result} />;
 }
 
 export default function DetailPage() {
@@ -422,7 +393,7 @@ export default function DetailPage() {
           <div className={`showcase-result-body${activeResult.template === "html_preview_v1" ? " is-html-preview" : ""}`}>
             {isReplayComplete ? (
               <div className={`showcase-result-document showcase-result-document-enter${activeResult.template === "html_preview_v1" ? " is-html-preview" : ""}`}>
-                <ResultContent result={activeResult} steps={replaySteps} />
+                <ResultContent result={activeResult} />
               </div>
             ) : (
               <ResultSkeleton label={t("showcase.detail.generatingResult")} />

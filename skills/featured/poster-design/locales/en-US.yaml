@@ -41,15 +41,11 @@ tasks:
         - title: Render the portrait poster
           description: Verify dimensions, information completeness, and distance readability
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Poster design direction
       title: BUILD BEYOND conference poster
       summary: Present an AI developer conference through monochrome, modular grid, and strong type hierarchy
-      highlights:
-        - Black-and-white modernist system
-        - BUILD BEYOND type hierarchy
-        - 1200×1600 production-ready artwork
-      image_asset: build_beyond_poster
+      html_asset: poster_concept_output
 
   - id: poster-critique
     selector:
@@ -71,11 +67,8 @@ tasks:
         - title: Prioritize improvements
           description: Organize concrete changes by their expected impact
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Poster improvement plan
       title: Visual diagnosis and prioritized changes
       summary: Improve hierarchy, readability, and consistency while preserving the core content
-      highlights:
-        - Communication goal and visual focus
-        - Layout, color, and spacing issues
-        - Prioritized concrete improvements
+      html_asset: poster_critique_output

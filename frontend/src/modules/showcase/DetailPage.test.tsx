@@ -123,8 +123,9 @@ describe("Showcase DetailPage", () => {
     renderDetail();
 
     fireEvent.click(await screen.findByRole("button", { name: /Second/ }));
-    await waitFor(() => expect(screen.getAllByText("Second flow")).toHaveLength(2));
+    await waitFor(() => expect(screen.getAllByText("Second flow")).toHaveLength(1));
     expect(await screen.findByText("Second result")).toBeInTheDocument();
+    expect(screen.queryByText("Second highlight")).not.toBeInTheDocument();
   });
 
   it("launches a workflow detail in the New task entry with its selected demo", async () => {

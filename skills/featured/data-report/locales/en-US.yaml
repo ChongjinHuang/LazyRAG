@@ -42,15 +42,11 @@ tasks:
         - title: Recommend business actions
           description: Explain key changes, analytical limits, and next actions
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Performance analysis report
       title: H1 2026 e-commerce performance
       summary: Turn six months of operating data into a KPI dashboard, trends, and recommended actions
-      highlights:
-        - Revenue, profit, and order KPIs
-        - Trends, margin, and efficiency
-        - Data boundaries and business actions
-      image_asset: commerce_dashboard
+      html_asset: cockpit_output
 
   - id: trend-report
     selector:
@@ -72,14 +68,11 @@ tasks:
         - title: Summarize trend findings
           description: Explain growth, decline, volatility, and what to monitor next
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Trend analysis report
       title: Metric trends, growth, and anomalies
       summary: Focus on time-series changes, growth intervals, inflection points, and anomalies
-      highlights:
-        - Date range and metric definitions
-        - Growth rates and key inflection points
-        - Anomalies and monitoring recommendations
+      html_asset: trend_output
 
   - id: dimension-report
     selector:
@@ -101,11 +94,8 @@ tasks:
         - title: Form recommendations
           description: Identify high and low performers and potential improvements
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Multi-dimensional report
       title: Group performance and contribution
       summary: Compare business dimensions by performance, contribution, and improvement opportunities
-      highlights:
-        - Group metrics and rankings
-        - Contribution structure and performance gaps
-        - Actions for high and low performers
+      html_asset: dimension_output

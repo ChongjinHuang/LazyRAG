@@ -905,7 +905,6 @@ const zhCN = {
     resultPreviewAlt: "{{title}}结果预览",
     resultPreview: "结果预览",
     executionFlow: "案例执行流程",
-    youWillGet: "你将得到",
     skipReplay: "跳过动画，查看完整流程",
     loadedCase: "已载入案例：{{title}}",
     uploadSuggestion: "建议上传：{{hint}}",

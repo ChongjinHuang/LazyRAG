@@ -31,6 +31,12 @@ assets:
   revenue_demo:
     file: assets/revenue-trend-demo.html
     role: result
+  comparison_output:
+    file: assets/comparison-chart.html
+    role: result
+  distribution_output:
+    file: assets/distribution-chart.html
+    role: result
 
 presentation:
   card:
@@ -90,14 +96,11 @@ tasks:
         - title: 输出结论
           description: 总结排名、差距和业务上值得关注的发现
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 对比分析图
       title: 分类指标对比与排名
       summary: 用交互图表呈现各分组的指标差异、排名和重点发现
-      highlights:
-        - 分类与指标映射
-        - 排名和差距对比
-        - 可交互与可下载 HTML
+      html_asset: comparison_output
 
   - id: distribution-chart
     selector:
@@ -118,11 +121,8 @@ tasks:
         - title: 生成交付文件
           description: 输出自包含的交互式 HTML 图表
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: 分布分析图
       title: 数据分布与结构洞察
       summary: 展示主要分布区间、类别构成和异常数据点
-      highlights:
-        - 分布区间与集中程度
-        - 类别构成和占比
-        - 异常点与进一步分析线索
+      html_asset: distribution_output
