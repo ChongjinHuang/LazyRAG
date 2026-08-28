@@ -11,11 +11,11 @@ classification:
 presentation:
   card:
     title: Cangjie book-to-skill distiller
-    description: Extract executable methods from a book and turn them into reusable Skills
+    description: Turn Pyramid Principle notes into conclusion-first, MECE, and evidence Skills
     output_type: document
     output_label: Skill design
     cover_asset: cover
-    result_summary: Break principles, frameworks, and procedures into atomic capabilities and an actionable Skill design
+    result_summary: Show how four reading notes become atomic Skills with clear boundaries and composition order
   detail:
     title: Cangjie book-to-skill distiller
     description: Analyze a complete book or selected chapters, extract transferable methods and execution steps, and produce a structured reusable Skill.
@@ -24,31 +24,29 @@ presentation:
 tasks:
   - id: distill-book
     selector:
-      title: Distill a complete book
-      description: Turn a book into a coherent set of executable capabilities
+      title: Distill Pyramid Principle notes
+      description: Turn four core notes into composable communication and review capabilities
       output_label: Skill set
     launch:
-      prompt_short: Distill this book into a set of executable Skills.
-      prompt: Read the supplied book or complete notes, identify transferable principles, frameworks, and decision methods, and split them into Skills with clear boundaries that can be invoked independently or together. For each Skill, define scenarios, inputs, steps, constraints, and outputs instead of merely summarizing the book.
+      prompt_short: Distill these Pyramid Principle notes into four executable Skills.
+      prompt: >-
+        Use the Cangjie distillation Skill to convert these Pyramid Principle reading notes into four clearly bounded executable Skills: 1) lead with the conclusion before reasons; 2) items at one level must be mutually exclusive and collectively exhaustive; 3) vertical structure should form questions and answers; 4) every claim needs verifiable evidence. For each Skill, provide triggers, inputs, steps, checks, failure modes, and outputs, then explain their composition order. Do not reproduce or expand the book; design only from these notes.
     replay:
       steps:
-        - title: Map the book
-          description: Identify the core problem, argument, and chapter relationships
-        - title: Extract method units
-          description: Separate claims, principles, frameworks, and executable actions
-        - title: Design Skill boundaries
-          description: Define triggers, inputs, outputs, steps, and constraints
-        - title: Assemble the Skill set
-          description: Produce reusable Skills that work independently and together
+        - title: Calibrate note boundaries
+          description: Use only the four supplied principles without expanding the book
+        - title: Extract atomic methods
+          description: Separate conclusion-first, MECE, evidence, and logic review
+        - title: Design execution boundaries
+          description: Define each capability's triggers, steps, checks, and failures
+        - title: Map composition order
+          description: Explain dependencies and the recommended invocation sequence
     result:
-      template: generic_report_v1
+      template: html_preview_v1
       eyebrow: Skill set
-      title: From book methodology to executable Skills
-      summary: Convert the core frameworks into capabilities with explicit triggers, steps, and deliverables
-      highlights:
-        - Methodology map of the book
-        - Atomic Skill inventory and boundaries
-        - Triggers, steps, and composition relationships
+      title: Four atomic Skills for pyramid communication
+      summary: Convert four reading notes into independently triggered methods that compose in sequence
+      html_asset: pyramid_map
 
   - id: distill-chapter
     selector:

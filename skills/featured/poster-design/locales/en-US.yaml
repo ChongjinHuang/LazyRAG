@@ -11,11 +11,11 @@ classification:
 presentation:
   card:
     title: Poster design methods
-    description: Establish a visual philosophy, then apply layout, typography, color, and rhythm to a poster
+    description: Build a visual philosophy and a black-and-white modernist poster for an AI developer conference
     output_type: images
     output_label: Poster design
     cover_asset: cover
-    result_summary: Begin with concepts and design principles, then deliver a coherent hierarchy, layout, and final direction
+    result_summary: Develop BUILD BEYOND through a grid and type hierarchy into a 1200×1600 final poster
   detail:
     title: Poster design methods
     description: Build a coherent design philosophy for a theme, then plan hierarchy, typography, color, negative space, and visual rhythm as an executable poster direction.
@@ -24,31 +24,32 @@ presentation:
 tasks:
   - id: poster-concept
     selector:
-      title: Poster concept design
-      description: Build a complete visual philosophy and layout direction from a theme and copy
+      title: AI conference poster
+      description: Present BUILD BEYOND through a black-and-white modernist system
       output_label: Poster design direction
     launch:
-      prompt_short: Design a poster from my theme and copy.
-      prompt: Based on the theme, core copy, dimensions, audience, and context I provide, first establish a clear design philosophy, then design the information hierarchy, grid, typography, color, negative space, and visual rhythm. Deliver an executable direction, ask for missing details, and avoid unrelated decoration.
+      prompt_short: Design a BUILD BEYOND poster for AI Developer Conference 2026.
+      prompt: Use the Poster Design Methods Skill to create a 1200×1600 portrait poster for AI Developer Conference 2026. The main theme is BUILD BEYOND and required details are “08.28 / SHANGHAI.” Use a black-and-white modernist style. First state a one-sentence design philosophy, then establish hierarchy, a modular grid, type scale, negative space, and visual rhythm, and finally deliver a renderable SVG or PNG. Do not add unprovided logos, speakers, or sponsors.
     replay:
       steps:
         - title: Extract thematic tension
-          description: Define the central idea, mood, and audience
-        - title: Establish the design philosophy
-          description: Create coherent visual principles, contrasts, and expression logic
-        - title: Build the layout system
-          description: Design hierarchy, grid, typography, color, and negative space
-        - title: Deliver the final direction
-          description: Organize renderable visual rules and the poster concept
+          description: Translate BUILD BEYOND into a visual proposition about crossing boundaries
+        - title: Establish a monochrome system
+          description: Use scale, negative space, and direction to create modernist contrast
+        - title: Build the modular grid
+          description: Relate the theme, date, city, and conference name through type scale
+        - title: Render the portrait poster
+          description: Verify dimensions, information completeness, and distance readability
     result:
       template: generic_report_v1
       eyebrow: Poster design direction
-      title: Theme, visual philosophy, and layout system
-      summary: Turn the core concept into a coherent, clear, and executable poster direction
+      title: BUILD BEYOND conference poster
+      summary: Present an AI developer conference through monochrome, modular grid, and strong type hierarchy
       highlights:
-        - Core concept and design philosophy
-        - Information hierarchy, grid, and typography
-        - Color, negative space, and final direction
+        - Black-and-white modernist system
+        - BUILD BEYOND type hierarchy
+        - 1200×1600 production-ready artwork
+      image_asset: build_beyond_poster
 
   - id: poster-critique
     selector:
