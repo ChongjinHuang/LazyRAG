@@ -18,7 +18,7 @@ presentation:
     result_summary: Explore three role questions, four-dimension scores, answer diagnostics, and a focused practice plan
   detail:
     title: AI interview simulator
-    description: Run a turn-by-turn mock interview based on the target role, experience, and interview type, with scoring, feedback, and improved examples after every answer.
+    description: Sourced from SkillHub and adapted for LazyMind. Run a turn-by-turn mock interview based on the target role, experience, and interview type, with scoring, feedback, and improved examples after every answer.
     attachment_hint: A resume, job description, target-company notes, or practice priorities
 
 tasks:

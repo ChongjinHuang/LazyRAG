@@ -48,7 +48,7 @@ presentation:
     result_summary: 用方法地图展示从读书笔记到四项原子 Skill 的拆解过程与边界
   detail:
     title: 仓颉拆书成技能
-    description: 面向完整书籍或重点章节，提炼可迁移的方法论、触发场景和执行步骤，生成结构化的可复用 Skill。
+    description: 源自 SkillHub，经 LazyMind 适配。面向完整书籍或重点章节，提炼可迁移的方法论、触发场景和执行步骤，生成结构化的可复用 Skill。
     attachment_hint: 书籍 PDF、章节文本、读书笔记或目标方法说明
 
 tasks:

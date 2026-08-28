@@ -18,7 +18,7 @@ presentation:
     result_summary: Show how four reading notes become atomic Skills with clear boundaries and composition order
   detail:
     title: Cangjie book-to-skill distiller
-    description: Analyze a complete book or selected chapters, extract transferable methods and execution steps, and produce a structured reusable Skill.
+    description: Sourced from SkillHub and adapted for LazyMind. Analyze a complete book or selected chapters, extract transferable methods and execution steps, and produce a structured reusable Skill.
     attachment_hint: A book PDF, chapter text, reading notes, or a target-method brief
 
 tasks:

@@ -48,7 +48,7 @@ presentation:
     result_summary: 交互查看三道岗位题、四维评分、回答诊断和针对性训练计划
   detail:
     title: AI 面试模拟器
-    description: 根据目标岗位、经验和面试类型开展一问一答的模拟面试，并在每题后给出评分、反馈和改进示例。
+    description: 源自 SkillHub，经 LazyMind 适配。根据目标岗位、经验和面试类型开展一问一答的模拟面试，并在每题后给出评分、反馈和改进示例。
     attachment_hint: 简历、岗位描述、目标公司信息或重点练习方向
 
 tasks:
