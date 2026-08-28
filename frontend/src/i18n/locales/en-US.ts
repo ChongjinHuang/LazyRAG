@@ -933,6 +933,7 @@ const enUS = {
     resultPreviewAlt: "Result preview for {{title}}",
     resultPreview: "Result preview",
     executionFlow: "Case execution flow",
+    youWillGet: "What you will get",
     skipReplay: "Skip animation and view the full workflow",
     loadedCase: "Case loaded: {{title}}",
     uploadSuggestion: "Suggested upload: {{hint}}",
