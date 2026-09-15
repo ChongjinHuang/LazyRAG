@@ -5,6 +5,10 @@ schema_version: 1
 # unlisted capabilities keep their relative placement.order order afterward.
 home:
   chat:
+    - oral-seeding-video-maker
+    - social-media-operator
+    - social-media-content-calendar
+    - short-video-script
     - novel-generator
     - chat-eq-reply
     - xiaohongshu-copywriter
@@ -13,11 +17,8 @@ home:
     - doc-coauthoring
     - tailored-resume-generator
     - diagram-design
-    - oral-seeding-video-maker
-    - social-media-operator
-    - social-media-content-calendar
-    - short-video-script
   work:
+    - agent-team-orchestration
     - ppt-workflow
     - image-workflow
     - academic_research_pipeline
@@ -27,4 +28,3 @@ home:
     - smart-charts
     - data-report
     - cangjie-distill
-    - agent-team-orchestration
