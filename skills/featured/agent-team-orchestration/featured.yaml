@@ -1,0 +1,121 @@
+schema_version: 2
+id: agent-team-orchestration
+type: work
+version: 1.0.0
+status: published
+default_locale: zh-CN
+provider: SkillHub
+skill:
+  source_url: https://skillhub.cn/skills/clawhub_arminnaimi/agent-team-orchestration
+  category: work
+  required_version: 1.0.0
+placement:
+  home: true
+  gallery: true
+  order: 30
+classification:
+  category: 开发与测试
+  tags:
+  - 多智能体
+  - 任务编排
+  - 交接审查
+  - 并行协作
+assets:
+  cover:
+    file: assets/cover.png
+    role: cover
+  build_review_demo:
+    file: assets/build-review.html
+    role: result
+  research_team_demo:
+    file: assets/research-team.html
+    role: result
+  incident_response_demo:
+    file: assets/incident-response.html
+    role: result
+presentation:
+  card:
+    title: Agent 团队编排
+    description: 为复杂任务规划角色、依赖、并行执行、交接与验收，减少重复和遗漏
+    output_type: report
+    output_label: Agent 编排方案
+    cover_asset: cover
+    result_summary: 查看 Agent 团队编排 的三个完整示例
+  detail:
+    title: Agent 团队编排
+    description: 把复杂目标拆成可分派任务，定义 Agent 角色、依赖关系、输入输出契约、审查节点和失败恢复策略，形成可执行的团队编排方案。 来源：https://skillhub.cn/skills/clawhub_arminnaimi/agent-team-orchestration，经
+      LazyMind 适配。
+    attachment_hint: 项目目标、约束、已有代码或资料、团队角色和交付期限
+tasks:
+- id: build-review
+  selector:
+    title: 双 Agent 开发审查
+    description: 设计实现与独立审查的交接流程
+    output_label: Agent 编排方案
+  launch:
+    prompt_short: 设计实现与独立审查的交接流程
+    prompt: 请使用 Agent Team Orchestration Skill，为“给现有 API 增加批量导出”设计双 Agent 工作流。一个负责实现，一个负责独立审查。请列出任务边界、依赖、交接物、验收标准、失败回退和最终负责人。
+  replay:
+    steps:
+    - title: 理解目标
+      description: 识别受众、场景、约束和期望交付物
+    - title: 组织方案
+      description: 调用 Skill 的方法框架拆解任务并形成结构
+    - title: 生成内容
+      description: 按平台或协作场景输出可直接使用的结果
+    - title: 检查交付
+      description: 核对完整性、可执行性和事实边界
+  result:
+    template: html_preview_v1
+    eyebrow: Agent 编排方案
+    title: 双 Agent 开发审查
+    summary: 设计实现与独立审查的交接流程；页面内容为可复现的示例预览。
+    html_asset: build_review_demo
+- id: research-team
+  selector:
+    title: 并行研究团队
+    description: 把市场研究拆成可合并、可追溯的并行任务
+    output_label: Agent 编排方案
+  launch:
+    prompt_short: 把市场研究拆成可合并、可追溯的并行任务
+    prompt: 为“企业知识库市场研究”设计四 Agent 并行方案，覆盖竞品、用户需求、定价和技术趋势。明确每个 Agent 的输入、输出格式、证据标准、依赖、去重机制和综合审查步骤。
+  replay:
+    steps:
+    - title: 理解目标
+      description: 识别受众、场景、约束和期望交付物
+    - title: 组织方案
+      description: 调用 Skill 的方法框架拆解任务并形成结构
+    - title: 生成内容
+      description: 按平台或协作场景输出可直接使用的结果
+    - title: 检查交付
+      description: 核对完整性、可执行性和事实边界
+  result:
+    template: html_preview_v1
+    eyebrow: Agent 编排方案
+    title: 并行研究团队
+    summary: 把市场研究拆成可合并、可追溯的并行任务；页面内容为可复现的示例预览。
+    html_asset: research_team_demo
+- id: incident-response
+  selector:
+    title: 故障响应协作
+    description: 设计诊断、修复、验证和沟通的串并行流程
+    output_label: Agent 编排方案
+  launch:
+    prompt_short: 设计诊断、修复、验证和沟通的串并行流程
+    prompt: 为线上接口延迟突增设计 Agent 团队协作方案，角色包括诊断、日志分析、修复建议、回归验证和状态沟通。请区分可并行与必须串行的步骤，设置停止条件、升级路径和最终验收。
+  replay:
+    steps:
+    - title: 理解目标
+      description: 识别受众、场景、约束和期望交付物
+    - title: 组织方案
+      description: 调用 Skill 的方法框架拆解任务并形成结构
+    - title: 生成内容
+      description: 按平台或协作场景输出可直接使用的结果
+    - title: 检查交付
+      description: 核对完整性、可执行性和事实边界
+  result:
+    template: html_preview_v1
+    eyebrow: Agent 编排方案
+    title: 故障响应协作
+    summary: 设计诊断、修复、验证和沟通的串并行流程；页面内容为可复现的示例预览。
+    html_asset: incident_response_demo

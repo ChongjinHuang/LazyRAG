@@ -13,6 +13,10 @@ home:
     - doc-coauthoring
     - tailored-resume-generator
     - diagram-design
+    - oral-seeding-video-maker
+    - social-media-operator
+    - social-media-content-calendar
+    - short-video-script
   work:
     - ppt-workflow
     - image-workflow
@@ -23,3 +27,4 @@ home:
     - smart-charts
     - data-report
     - cangjie-distill
+    - agent-team-orchestration
