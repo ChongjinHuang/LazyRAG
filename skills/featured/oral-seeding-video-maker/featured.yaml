@@ -69,7 +69,7 @@ tasks:
     template: html_preview_v1
     eyebrow: 口播视频方案
     title: 咖啡新品口播分镜
-    summary: 为冷萃咖啡新品生成 20 秒口播脚本和逐镜头分镜；页面内容为可复现的示例预览。
+    summary: 直接展示 20 秒完整口播、逐镜头画面、字幕和事实核验边界。
     html_asset: coffee_launch_demo
 - id: saas-explainer
   selector:
@@ -93,7 +93,7 @@ tasks:
     template: html_preview_v1
     eyebrow: 口播视频方案
     title: SaaS 功能讲解短片
-    summary: 把复杂功能改写成 30 秒清晰、可信的口播内容；页面内容为可复现的示例预览。
+    summary: 直接展示 30 秒完整口播、屏幕录制提示、字幕与结尾行动引导。
     html_asset: saas_explainer_demo
 - id: daily-creator
   selector:
@@ -117,5 +117,5 @@ tasks:
     template: html_preview_v1
     eyebrow: 口播视频方案
     title: 日更账号轻量脚本
-    summary: 为新手创作者设计低成本、可连续拍摄的 12 秒模板；页面内容为可复现的示例预览。
+    summary: 直接展示手机可拍的 12 秒三镜头脚本、字幕重点和可复用变量。
     html_asset: daily_creator_demo

@@ -69,7 +69,7 @@ tasks:
     template: html_preview_v1
     eyebrow: 短视频脚本
     title: 60 秒知识口播
-    summary: 把一个专业概念讲得清楚、可信且可拍摄；页面内容为可复现的示例预览。
+    summary: 直接展示 60 秒逐段口播、镜头、字幕、标题与封面文案。
     html_asset: knowledge_script_demo
 - id: product-script
   selector:
@@ -93,7 +93,7 @@ tasks:
     template: html_preview_v1
     eyebrow: 短视频脚本
     title: 产品种草短视频
-    summary: 在真实限制下呈现产品卖点和使用场景；页面内容为可复现的示例预览。
+    summary: 直接展示严格基于已知参数的 30 秒产品镜头表、口播和互动设计。
     html_asset: product_script_demo
 - id: bilibili-outline
   selector:
@@ -117,5 +117,5 @@ tasks:
     template: html_preview_v1
     eyebrow: 短视频脚本
     title: B 站深度视频结构
-    summary: 把零散材料组织成有章节感的 6 分钟视频；页面内容为可复现的示例预览。
+    summary: 直接展示 6 分钟章节结构、B-roll、节奏转折和待补证据清单。
     html_asset: bilibili_outline_demo

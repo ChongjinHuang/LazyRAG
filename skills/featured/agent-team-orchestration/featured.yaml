@@ -69,7 +69,7 @@ tasks:
     template: html_preview_v1
     eyebrow: Agent 编排方案
     title: 双 Agent 开发审查
-    summary: 设计实现与独立审查的交接流程；页面内容为可复现的示例预览。
+    summary: 直接展示实现与审查 Agent 的职责契约、交接门禁、验收与回退方案。
     html_asset: build_review_demo
 - id: research-team
   selector:
@@ -93,7 +93,7 @@ tasks:
     template: html_preview_v1
     eyebrow: Agent 编排方案
     title: 并行研究团队
-    summary: 把市场研究拆成可合并、可追溯的并行任务；页面内容为可复现的示例预览。
+    summary: 直接展示四个研究 Agent 的输入输出、证据标准、去重与综合审查流程。
     html_asset: research_team_demo
 - id: incident-response
   selector:
@@ -117,5 +117,5 @@ tasks:
     template: html_preview_v1
     eyebrow: Agent 编排方案
     title: 故障响应协作
-    summary: 设计诊断、修复、验证和沟通的串并行流程；页面内容为可复现的示例预览。
+    summary: 直接展示故障响应时间线、并行角色、决策门、停止条件和最终验收。
     html_asset: incident_response_demo

@@ -69,7 +69,7 @@ tasks:
     template: html_preview_v1
     eyebrow: 内容运营日历
     title: 7 天内容排期
-    summary: 为单人运营账号设计轻量、可执行的一周计划；页面内容为可复现的示例预览。
+    summary: 直接展示 7 天选题、平台、素材、投入预算与逐日复盘指标。
     html_asset: seven_day_calendar_demo
 - id: monthly-campaign
   selector:
@@ -93,7 +93,7 @@ tasks:
     template: html_preview_v1
     eyebrow: 内容运营日历
     title: 新品月度内容日历
-    summary: 围绕预热、发布和口碑沉淀组织四周内容；页面内容为可复现的示例预览。
+    summary: 直接展示预热、发布、使用教育和口碑沉淀四阶段的 12 条内容。
     html_asset: monthly_campaign_demo
 - id: private-domain
   selector:
@@ -117,5 +117,5 @@ tasks:
     template: html_preview_v1
     eyebrow: 内容运营日历
     title: 公域到私域转化排期
-    summary: 设计不骚扰用户的内容与承接节奏；页面内容为可复现的示例预览。
+    summary: 直接展示 14 天公域到私域触点、频次限制、退出机制与合规边界。
     html_asset: private_domain_demo
