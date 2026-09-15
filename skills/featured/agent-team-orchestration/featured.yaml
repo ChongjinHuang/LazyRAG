@@ -10,7 +10,7 @@ skill:
   category: work
   required_version: 1.0.0
 placement:
-  home: true
+  home: false
   gallery: true
   order: 30
 classification:

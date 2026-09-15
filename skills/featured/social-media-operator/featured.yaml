@@ -10,7 +10,7 @@ skill:
   category: chat
   required_version: 1.0.1
 placement:
-  home: true
+  home: false
   gallery: true
   order: 31
 classification:
