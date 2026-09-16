@@ -33,6 +33,9 @@ assets:
   growth_review_demo:
     file: assets/growth-review.html
     role: result
+  case_visual:
+    file: assets/case-visual.png
+    role: result
 presentation:
   card:
     title: 社交媒体运营顾问

@@ -3255,6 +3255,7 @@ export interface ShowcaseCase {
     'source_url': string;
     'tags'?: Array<string>;
     'tasks'?: Array<ShowcaseCaseTask>;
+    'technology_type': string;
     'title': string;
     'type': string;
     'workflow_ref'?: string;

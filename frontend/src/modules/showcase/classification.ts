@@ -7,7 +7,13 @@ export function showcaseEntryType(capabilityType: string): ShowcaseEntryType {
   return capabilityType === "chat" ? "chat" : "work";
 }
 
-export function showcaseTechnologyType(capabilityType: string): ShowcaseTechnologyType {
+export function showcaseTechnologyType(
+  capabilityType: string,
+  configuredType?: string,
+): ShowcaseTechnologyType {
+  if (configuredType === "skill" || configuredType === "workflow") {
+    return configuredType;
+  }
   return capabilityType === "workflow" ? "workflow" : "skill";
 }
 

@@ -1754,10 +1754,14 @@ func TestOpenAPIShowcaseCaseIncludesSkillSourceURL(t *testing.T) {
 	if hot, ok := properties["hot"].(map[string]any); !ok || hot["type"] != "boolean" {
 		t.Fatalf("ShowcaseCase hot = %#v, want required boolean", properties["hot"])
 	}
+	if technologyType, ok := properties["technology_type"].(map[string]any); !ok || technologyType["type"] != "string" {
+		t.Fatalf("ShowcaseCase technology_type = %#v, want required string", properties["technology_type"])
+	}
 	required := schema["required"].([]any)
 	foundSourceURL := false
 	foundProvider := false
 	foundHot := false
+	foundTechnologyType := false
 	for _, field := range required {
 		switch field {
 		case "source_url":
@@ -1766,9 +1770,11 @@ func TestOpenAPIShowcaseCaseIncludesSkillSourceURL(t *testing.T) {
 			foundProvider = true
 		case "hot":
 			foundHot = true
+		case "technology_type":
+			foundTechnologyType = true
 		}
 	}
-	if !foundSourceURL || !foundProvider || !foundHot {
+	if !foundSourceURL || !foundProvider || !foundHot || !foundTechnologyType {
 		t.Fatalf("ShowcaseCase required fields = %#v", required)
 	}
 }
