@@ -343,21 +343,6 @@
       "package_file": "packages/bsk_DC2C3BADD06BCCB0145F0CE70858.zip"
     },
     {
-      "key": "clawhub_arminnaimi/agent-team-orchestration",
-      "uid": "bsk_64CA696AD34B5ADEA30CD2ED8288",
-      "source_url": "https://skillhub.cn/skills/clawhub_arminnaimi/agent-team-orchestration",
-      "resolved_url": "https://api.skillhub.cn/api/v1/download?slug=%40clawhub_arminnaimi%2Fagent-team-orchestration\u0026version=1.0.0",
-      "version": "1.0.0",
-      "name": "agent-team-orchestration",
-      "description": "Orchestrate multi-agent teams with defined roles, task lifecycles, handoff protocols, and review workflows. Use when: (1) Setting up a team of 2+ agents with different specializations, (2) Defining task routing and lifecycle (inbox → spec → build → review → done), (3) Creating handoff protocols between agents, (4) Establishing review and quality gates, (5) Managing async communication and artifact sharing between agents.",
-      "category": "work",
-      "market_visible": false,
-      "archive_sha256": "9e007cb4a6f92dc1ec0867300946e648120d7e583f05675175c33479575c21cd",
-      "tree_sha256": "51830369c1e005edd0ae0c5909a5dead5359379a0a1f96f6c0bae524df2dfbac",
-      "archive_size": 10600,
-      "package_file": "packages/bsk_64CA696AD34B5ADEA30CD2ED8288.zip"
-    },
-    {
       "key": "user_1a7e2e57/cangjie-distill",
       "uid": "bsk_85D8CC6C1D0107F230363950DC79",
       "source_url": "https://skillhub.cn/skills/user_1a7e2e57/cangjie-distill",

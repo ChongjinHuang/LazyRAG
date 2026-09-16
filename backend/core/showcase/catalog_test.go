@@ -261,38 +261,13 @@ func TestCompileCatalogBuildsWorkflowCapabilityWithoutSkillBinding(t *testing.T)
 	}
 }
 
-func TestCompileCatalogBuildsSkillBackedWorkflowCapability(t *testing.T) {
-	root := t.TempDir()
-	body := strings.Replace(validFeaturedYAML("agent-team", false), "type: chat", "type: workflow", 1)
-	writeFeaturedSource(t, root, "agent-team", body)
-
-	definitions, err := LoadSourceDirectory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	definitions[0].Skill.BuiltinSkillUID = "bsk_agent_team"
-	definitions[0].Skill.Version = "1.0.0"
-	definitions[0].Skill.ArchiveSHA256 = strings.Repeat("a", 64)
-	catalog, err := CompileCatalog(definitions, filepath.Join(t.TempDir(), "featured-skills"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cases := catalog.ShowcaseCases("zh-CN")
-	if len(cases) != 1 || cases[0].Type != TypeWorkflow || cases[0].BuiltinSkillUID != "bsk_agent_team" {
-		t.Fatalf("skill-backed workflow cases = %#v", cases)
-	}
-	if cases[0].WorkflowRef != "" || cases[0].SourceURL != "https://example.test/agent-team.zip" {
-		t.Fatalf("skill-backed workflow binding = %#v", cases[0])
-	}
-}
-
 func TestLoadSourceDirectoryRejectsMixedSkillAndWorkflowBindings(t *testing.T) {
 	root := t.TempDir()
 	body := strings.Replace(validFeaturedYAML("demo", false), "type: chat", "type: workflow", 1)
 	body = strings.Replace(body, "placement:\n", "workflow:\n  workflow_ref: builtin:test-workflow\nplacement:\n", 1)
 	writeFeaturedSource(t, root, "demo", body)
 	_, err := LoadSourceDirectory(root)
-	if err == nil || !strings.Contains(err.Error(), "must not define both skill and workflow bindings") {
+	if err == nil || !strings.Contains(err.Error(), "requires workflow and forbids skill") {
 		t.Fatalf("error = %v", err)
 	}
 }

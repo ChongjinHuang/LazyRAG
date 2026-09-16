@@ -1,0 +1,78 @@
+initial: __start__
+
+transitions:
+  __start__: [{to: define_scope}]
+  define_scope: [{to: design_team}]
+  design_team: [{to: define_handoffs}]
+  define_handoffs: [{to: design_quality_gates}]
+  design_quality_gates: [{to: assemble_plan}]
+  assemble_plan: [{to: __end__}]
+
+steps:
+  define_scope:
+    label: 目标与约束
+    mode: auto
+    prompt: |
+      分析用户请求，生成一份简洁但完整的目标与约束简报。至少包含：最终目标、明确范围、
+      不做事项、输入材料、期望交付物、时限或优先级、已知风险与仍需确认的假设。不要设计
+      Agent 角色，也不要声称已经执行任务。将结果以 Markdown 保存到 scope_brief。
+    outputs: [{material: scope_brief, required: true}]
+    acceptance_criteria: scope_brief 明确目标、边界、输入、交付物、约束和假设。
+
+  design_team:
+    label: 角色与任务图
+    mode: auto
+    prompt: |
+      阅读 scope_brief，为任务设计最小充分的 Agent 团队和任务依赖图。每个 Agent 只设一个
+      主要角色，并列出职责、禁止越界事项、所需能力、输入、输出、开始条件和完成标准。
+      标明可以并行的任务、必须串行的依赖、负责路由和最终决策的 Orchestrator，以及每项
+      交付物的唯一负责人。将结果以 Markdown 保存到 team_blueprint。
+    inputs: [{material: scope_brief, required: true}]
+    outputs: [{material: team_blueprint, required: true}]
+    acceptance_criteria: team_blueprint 包含角色边界、任务所有权、依赖关系和并行分组。
+
+  define_handoffs:
+    label: 生命周期与交接
+    mode: auto
+    prompt: |
+      阅读 scope_brief 和 team_blueprint，设计从 Inbox、Assigned、In Progress、Review 到
+      Done 或 Failed 的任务生命周期和逐项交接协议。每次交接必须说明完成了什么、产物位置
+      或标识、验证方式、已知问题和下一动作；同时规定状态负责人、共享产物命名规则、进度
+      更新频率和阻塞上报时机。将结果以 Markdown 保存到 handoff_protocol。
+    inputs:
+      - {material: scope_brief, required: true}
+      - {material: team_blueprint, required: true}
+    outputs: [{material: handoff_protocol, required: true}]
+    acceptance_criteria: handoff_protocol 覆盖完整状态流、交接字段、产物约定和阻塞上报。
+
+  design_quality_gates:
+    label: 审查与恢复
+    mode: auto
+    prompt: |
+      阅读前三项产物，为关键交付物设置独立审查、验收标准、停止条件、升级路径和失败恢复。
+      构建者不能批准自己的产物；审查结论必须是通过、带条件通过或退回，并说明证据要求。
+      对超时、能力不匹配、依赖失败、产物缺失和审查不通过分别给出恢复动作与最终责任人。
+      将结果以 Markdown 保存到 quality_plan。
+    inputs:
+      - {material: scope_brief, required: true}
+      - {material: team_blueprint, required: true}
+      - {material: handoff_protocol, required: true}
+    outputs: [{material: quality_plan, required: true}]
+    acceptance_criteria: quality_plan 定义独立审查、可验证门禁、升级路径、恢复动作和责任人。
+
+  assemble_plan:
+    label: 编排方案
+    mode: auto
+    prompt: |
+      综合 scope_brief、team_blueprint、handoff_protocol 和 quality_plan，生成可直接执行的
+      Agent 团队编排方案。保持前序约束一致，包含团队表、按依赖排序的执行阶段、并行批次、
+      输入输出契约、交接模板、审查门禁、失败回退、最终验收清单和负责人矩阵。不要虚构
+      已完成的执行结果；明确哪些假设需要人在启动前确认。将结果以 Markdown 保存到
+      orchestration_plan。
+    inputs:
+      - {material: scope_brief, required: true}
+      - {material: team_blueprint, required: true}
+      - {material: handoff_protocol, required: true}
+      - {material: quality_plan, required: true}
+    outputs: [{material: orchestration_plan, required: true}]
+    acceptance_criteria: orchestration_plan 可执行、责任唯一、依赖明确，并覆盖交接、审查、恢复和验收。

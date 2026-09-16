@@ -29,24 +29,24 @@ export function useFeaturedCapabilityBinding(
       return () => { active = false; };
     }
 
-    if (capabilityType === "workflow" && workflowRef) {
-      setMentions([{
-        mention_id: `featured-workflow:${workflowRef}`,
-        type: "workflow",
-        resource_id: workflowRef,
-        display_name: capabilityTitle || workflowRef,
-      }]);
-      setStatus("ready");
+    if (capabilityType === "workflow") {
+      if (!workflowRef) {
+        console.error("Prepare featured Workflow failed: missing workflow_ref");
+        setStatus("failed");
+      } else {
+        setMentions([{
+          mention_id: `featured-workflow:${workflowRef}`,
+          type: "workflow",
+          resource_id: workflowRef,
+          display_name: capabilityTitle || workflowRef,
+        }]);
+        setStatus("ready");
+      }
       return () => { active = false; };
     }
 
     if (!builtinSkillUID) {
-      if (capabilityType === "workflow") {
-        console.error("Prepare featured Workflow failed: missing capability binding");
-        setStatus("failed");
-      } else {
-        setStatus("idle");
-      }
+      setStatus("idle");
       return () => { active = false; };
     }
 

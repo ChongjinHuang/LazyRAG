@@ -5,10 +5,8 @@ version: 1.0.0
 status: published
 default_locale: zh-CN
 provider: SkillHub
-skill:
-  source_url: https://skillhub.cn/skills/clawhub_arminnaimi/agent-team-orchestration
-  category: work
-  required_version: 1.0.0
+workflow:
+  workflow_ref: builtin:agent-team-orchestration
 placement:
   home: false
   gallery: true

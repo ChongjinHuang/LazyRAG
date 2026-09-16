@@ -1,0 +1,60 @@
+id: agent-team-orchestration
+name: Agent 团队编排
+description: >
+  把复杂目标拆成由多个 Agent 协作完成的可执行流程，明确角色边界、任务依赖、并行机会、
+  输入输出契约、交接协议、审查门禁、失败恢复和最终责任人。
+
+when_to_use: >
+  当用户需要为两个或更多 Agent 设计持续协作流程、并行研究团队、实现与独立审查、故障响应
+  分工，或需要明确任务状态、交接物和质量门禁时使用。单次简单委派、普通问题路由或单 Agent
+  可以直接完成的任务不使用此工作流。
+
+steps:
+  - {id: define_scope, label: 目标与约束}
+  - {id: design_team, label: 角色与任务图}
+  - {id: define_handoffs, label: 生命周期与交接}
+  - {id: design_quality_gates, label: 审查与恢复}
+  - {id: assemble_plan, label: 编排方案}
+
+slots:
+  - {id: scope_brief, label: 目标与约束简报, type: text, cardinality: single, exposed: true}
+  - {id: team_blueprint, label: 角色与任务图, type: text, cardinality: single, exposed: true}
+  - {id: handoff_protocol, label: 生命周期与交接协议, type: text, cardinality: single, exposed: true}
+  - {id: quality_plan, label: 审查、升级与恢复机制, type: text, cardinality: single, exposed: true}
+  - {id: orchestration_plan, label: 最终 Agent 编排方案, type: text, cardinality: single, exposed: true}
+
+ui:
+  slots:
+    scope_brief: {widgetType: text-markdown, readOnly: true}
+    team_blueprint: {widgetType: text-markdown, readOnly: true}
+    handoff_protocol: {widgetType: text-markdown, readOnly: true}
+    quality_plan: {widgetType: text-markdown, readOnly: true}
+    orchestration_plan: {widgetType: text-markdown, readOnly: true}
+  tabs:
+    - {id: scope, step_id: define_scope, label: 目标约束, layout: list, slots: [{id: scope_brief}]}
+    - {id: team, step_id: design_team, label: 角色任务, layout: list, slots: [{id: team_blueprint}]}
+    - {id: handoffs, step_id: define_handoffs, label: 生命周期, layout: list, slots: [{id: handoff_protocol}]}
+    - {id: quality, step_id: design_quality_gates, label: 审查恢复, layout: list, slots: [{id: quality_plan}]}
+    - {id: result, step_id: assemble_plan, label: 编排方案, layout: list, slots: [{id: orchestration_plan}]}
+
+i18n:
+  en-US:
+    name: Agent Team Orchestration
+    steps:
+      define_scope: {label: Goals and Constraints}
+      design_team: {label: Roles and Task Graph}
+      define_handoffs: {label: Lifecycle and Handoffs}
+      design_quality_gates: {label: Review and Recovery}
+      assemble_plan: {label: Orchestration Plan}
+    tabs:
+      scope: {label: Scope}
+      team: {label: Team}
+      handoffs: {label: Handoffs}
+      quality: {label: Quality}
+      result: {label: Plan}
+    slots:
+      scope_brief: {label: Goals and Constraints Brief}
+      team_blueprint: {label: Roles and Task Graph}
+      handoff_protocol: {label: Lifecycle and Handoff Protocol}
+      quality_plan: {label: Review, Escalation, and Recovery}
+      orchestration_plan: {label: Final Agent Orchestration Plan}

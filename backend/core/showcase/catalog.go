@@ -779,19 +779,17 @@ func validateDefinition(definition FeaturedDefinition, compiled bool) error {
 	if (definition.Placement.Home || definition.Placement.Gallery) && definition.Placement.Order <= 0 {
 		return definitionFailure("placement.order must be positive")
 	}
-	if definition.Skill != nil && definition.Workflow != nil {
-		return definitionFailure("capability must not define both skill and workflow bindings")
-	}
 	if definition.Type == TypeWorkflow {
-		if definition.Skill == nil && definition.Workflow == nil {
-			return definitionFailure("type workflow requires a skill or workflow binding")
+		if definition.Skill != nil || definition.Workflow == nil {
+			return definitionFailure("type workflow requires workflow and forbids skill")
+		}
+		if err := validateWorkflowRef(definition.Workflow.WorkflowRef); err != nil {
+			return err
 		}
 	} else {
 		if definition.Skill == nil || definition.Workflow != nil {
 			return definitionFailure("type chat or work requires skill and forbids workflow")
 		}
-	}
-	if definition.Skill != nil {
 		if err := validateSkillSource(definition.Skill.SourceURL, compiled); err != nil {
 			return err
 		}
@@ -802,11 +800,6 @@ func validateDefinition(definition FeaturedDefinition, compiled bool) error {
 			if _, err := hex.DecodeString(definition.Skill.ArchiveSHA256); err != nil {
 				return definitionFailure("invalid skill archive_sha256: %v", err)
 			}
-		}
-	}
-	if definition.Workflow != nil {
-		if err := validateWorkflowRef(definition.Workflow.WorkflowRef); err != nil {
-			return err
 		}
 	}
 	if strings.TrimSpace(definition.Classification.Category) == "" {

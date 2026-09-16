@@ -179,8 +179,11 @@ func validateFeaturedBindings(catalog Catalog, builtinCatalogPath string) error 
 		byUID[entry.UID] = entry
 	}
 	for _, definition := range catalog.Cases {
-		if definition.Skill == nil {
+		if definition.Type == TypeWorkflow {
 			continue
+		}
+		if definition.Skill == nil {
+			return definitionFailure("featured Skill %s has no Skill binding", definition.ID)
 		}
 		entry, ok := byUID[definition.Skill.BuiltinSkillUID]
 		if !ok {
