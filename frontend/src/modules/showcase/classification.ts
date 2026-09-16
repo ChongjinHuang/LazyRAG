@@ -3,6 +3,10 @@ export type ShowcaseTechnologyType = "skill" | "workflow";
 
 export const SHOWCASE_ENTRY_QUERY_PARAM = "showcase_entry";
 
+export const STEP_EXECUTION_SKILL_CASE_IDS = new Set([
+  "agent-team-orchestration",
+]);
+
 export function showcaseEntryType(capabilityType: string): ShowcaseEntryType {
   return capabilityType === "chat" ? "chat" : "work";
 }
@@ -11,10 +15,10 @@ export function showcaseTechnologyType(
   capabilityType: string,
   caseId?: string,
 ): ShowcaseTechnologyType {
-  if (caseId === "agent-team-orchestration") {
-    return "workflow";
-  }
-  return capabilityType === "workflow" ? "workflow" : "skill";
+  const isStepExecution =
+    capabilityType === "workflow" ||
+    (caseId !== undefined && STEP_EXECUTION_SKILL_CASE_IDS.has(caseId));
+  return isStepExecution ? "workflow" : "skill";
 }
 
 export function parseShowcaseEntryType(value: string | null): ShowcaseEntryType | null {
