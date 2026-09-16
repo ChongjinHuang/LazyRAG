@@ -48,6 +48,23 @@ describe("useFeaturedCapabilityBinding", () => {
     }]);
   });
 
+  it("installs a Skill-backed capability classified as a Workflow", async () => {
+    enableBuiltinSkillMock.mockResolvedValue({ skillId: "skill-team", name: "Agent Team" } as never);
+    const { result } = renderHook(() => useFeaturedCapabilityBinding({
+      type: "workflow",
+      title: "Agent Team",
+      builtin_skill_uid: "bsk-agent-team",
+    }));
+
+    expect(result.current.status).toBe("preparing");
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(result.current.mentions).toEqual([expect.objectContaining({
+      type: "skill",
+      resource_id: "skill-team",
+      display_name: "Agent Team",
+    })]);
+  });
+
   it("retries a failed install and clears when the binding is removed", async () => {
     enableBuiltinSkillMock
       .mockRejectedValueOnce(new Error("offline"))

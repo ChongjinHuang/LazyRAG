@@ -33,8 +33,14 @@ assets:
   private_domain_demo:
     file: assets/private-domain.html
     role: result
-  case_visual:
-    file: assets/case-visual.png
+  seven_day_calendar_visual:
+    file: assets/seven-day-calendar.png
+    role: result
+  monthly_campaign_visual:
+    file: assets/monthly-campaign.png
+    role: result
+  private_domain_visual:
+    file: assets/private-domain.png
     role: result
 presentation:
   card:

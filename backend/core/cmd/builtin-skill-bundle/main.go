@@ -202,7 +202,7 @@ func run(ctx context.Context, opts options, client *http.Client) error {
 			if definition.Status != showcase.StatusPublished {
 				continue
 			}
-			if definition.Type == showcase.TypeWorkflow {
+			if definition.Skill == nil {
 				continue
 			}
 			input, source, err := featuredSourceInput(definition.Skill.SourceURL, definition.Skill.RequiredVersion, definition.ID, definition.Skill.Category)
@@ -316,7 +316,7 @@ func run(ctx context.Context, opts options, client *http.Client) error {
 			if definition.Status != showcase.StatusPublished {
 				continue
 			}
-			if definition.Type == showcase.TypeWorkflow {
+			if definition.Skill == nil {
 				compiledDefinitions = append(compiledDefinitions, definition)
 				continue
 			}
@@ -348,7 +348,7 @@ func run(ctx context.Context, opts options, client *http.Client) error {
 func validateFeaturedWorkflowBindings(definitions []showcase.FeaturedDefinition, featuredSources string) error {
 	workflowRoot := filepath.Join(filepath.Dir(filepath.Dir(filepath.Clean(featuredSources))), "workflows")
 	for _, definition := range definitions {
-		if definition.Type != showcase.TypeWorkflow {
+		if definition.Workflow == nil {
 			continue
 		}
 		workflowID := strings.TrimPrefix(strings.TrimSpace(definition.Workflow.WorkflowRef), "builtin:")

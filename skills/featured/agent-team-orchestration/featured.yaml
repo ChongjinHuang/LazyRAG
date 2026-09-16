@@ -1,6 +1,6 @@
 schema_version: 2
 id: agent-team-orchestration
-type: work
+type: workflow
 version: 1.0.0
 status: published
 default_locale: zh-CN

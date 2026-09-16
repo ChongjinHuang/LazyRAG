@@ -209,7 +209,7 @@ export default function GalleryPage() {
       const matchesCategory = category === "" || item.category === category;
       const matchesEntryType = entryType === "" || showcaseEntryType(item.type) === entryType;
       const matchesTechnologyType = technologyType === ""
-        || showcaseTechnologyType(item.type, item.id) === technologyType;
+        || showcaseTechnologyType(item.type) === technologyType;
       const searchable = [
         item.title,
         item.description,
