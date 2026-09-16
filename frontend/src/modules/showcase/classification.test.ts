@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { showcaseTechnologyType } from "./classification";
 
 describe("showcaseTechnologyType", () => {
-  it("uses the configured technology type when provided", () => {
-    expect(showcaseTechnologyType("work", "workflow")).toBe("workflow");
+  it("classifies agent team orchestration as step execution", () => {
+    expect(showcaseTechnologyType("work", "agent-team-orchestration")).toBe("workflow");
   });
 
   it("keeps the legacy type-based fallback", () => {

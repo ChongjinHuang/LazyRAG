@@ -107,32 +107,6 @@ func TestShowcaseCasesUseConfiguredPlacementOrder(t *testing.T) {
 	}
 }
 
-func TestShowcaseCasesUseConfiguredTechnologyType(t *testing.T) {
-	root := t.TempDir()
-	definition := strings.Replace(
-		validFeaturedYAML("orchestrator", false),
-		"type: chat\n",
-		"type: work\ntechnology_type: workflow\n",
-		1,
-	)
-	writeFeaturedSource(t, root, "orchestrator", definition)
-	definitions, err := LoadSourceDirectory(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	definitions[0].Skill.BuiltinSkillUID = "bsk_orchestrator"
-	definitions[0].Skill.Version = "1.0.0"
-	definitions[0].Skill.ArchiveSHA256 = strings.Repeat("a", 64)
-	catalog, err := CompileCatalog(definitions, filepath.Join(t.TempDir(), "featured-skills"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	cases := catalog.ShowcaseCases("zh-CN")
-	if len(cases) != 1 || cases[0].Type != TypeWork || cases[0].TechnologyType != "workflow" {
-		t.Fatalf("configured technology type was not preserved: %#v", cases)
-	}
-}
-
 func TestLoadSourceDirectoryAppliesOptionalHomeOrdering(t *testing.T) {
 	root := t.TempDir()
 	writeFeaturedSource(t, root, "first", validFeaturedYAML("first", false))

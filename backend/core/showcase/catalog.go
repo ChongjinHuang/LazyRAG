@@ -84,7 +84,6 @@ type FeaturedDefinition struct {
 	SchemaVersion  int                       `yaml:"schema_version,omitempty" json:"-"`
 	ID             string                    `yaml:"id" json:"id"`
 	Type           string                    `yaml:"type" json:"type"`
-	TechnologyType string                    `yaml:"technology_type,omitempty" json:"technology_type,omitempty"`
 	Version        string                    `yaml:"version" json:"version"`
 	Status         string                    `yaml:"status" json:"status"`
 	DefaultLocale  string                    `yaml:"default_locale" json:"default_locale"`
@@ -477,7 +476,6 @@ func (c Catalog) ShowcaseCases(locale string) []ShowcaseCase {
 		cases = append(cases, ShowcaseCase{
 			ID:                definition.ID,
 			Type:              definition.Type,
-			TechnologyType:    featuredTechnologyType(definition),
 			Provider:          definition.Provider,
 			SourceURL:         sourceURL,
 			Title:             presentation.Card.Title,
@@ -505,16 +503,6 @@ func (c Catalog) ShowcaseCases(locale string) []ShowcaseCase {
 		return cases[i].FeaturedOrder < cases[j].FeaturedOrder
 	})
 	return cases
-}
-
-func featuredTechnologyType(definition FeaturedDefinition) string {
-	if definition.TechnologyType != "" {
-		return definition.TechnologyType
-	}
-	if definition.Type == TypeWorkflow {
-		return "workflow"
-	}
-	return "skill"
 }
 
 func decodeYAMLFile(filePath string, target any) error {
@@ -784,9 +772,6 @@ func validateDefinition(definition FeaturedDefinition, compiled bool) error {
 	}
 	if _, ok := allowedFeaturedTypes[definition.Type]; !ok {
 		return definitionFailure("type must be chat, work, or workflow")
-	}
-	if definition.TechnologyType != "" && definition.TechnologyType != "skill" && definition.TechnologyType != "workflow" {
-		return definitionFailure("technology_type must be skill or workflow")
 	}
 	if definition.Status == StatusPublished && !definition.Placement.Home && !definition.Placement.Gallery {
 		return definitionFailure("published definition must have a placement")

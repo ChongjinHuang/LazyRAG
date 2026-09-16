@@ -40,7 +40,7 @@ export default function CaseCard({
   const location = useLocation();
   const coverClass = COVER_CLASS_BY_OUTPUT_TYPE[item.output_type] || "report";
   const entryType = showcaseEntryType(item.type);
-  const technologyType = showcaseTechnologyType(item.type, item.technology_type);
+  const technologyType = showcaseTechnologyType(item.type, item.id);
   const entryTypeLabel = t(`showcase.filters.capability.${entryType}`);
   const technologyTypeLabel = t(`showcase.filters.technology.${technologyType}`);
   const detailPath = `/agent/chat/cases/${encodeURIComponent(item.id)}`;

@@ -9,10 +9,10 @@ export function showcaseEntryType(capabilityType: string): ShowcaseEntryType {
 
 export function showcaseTechnologyType(
   capabilityType: string,
-  configuredType?: string,
+  caseId?: string,
 ): ShowcaseTechnologyType {
-  if (configuredType === "skill" || configuredType === "workflow") {
-    return configuredType;
+  if (caseId === "agent-team-orchestration") {
+    return "workflow";
   }
   return capabilityType === "workflow" ? "workflow" : "skill";
 }
