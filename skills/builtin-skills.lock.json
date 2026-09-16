@@ -652,19 +652,19 @@
       "package_file": "packages/bsk_FFB9D957F2E7E6045A01B28AA5D1.zip"
     },
     {
-      "key": "skill",
-      "uid": "bsk_8B81C0C653E35561065D445BCE7B",
-      "source_url": "builtin://featured/social-media-content-calendar/skill",
-      "resolved_url": "builtin://featured/social-media-content-calendar/skill",
+      "key": "clawhub_seanwyngaard/social-media-content-calendar",
+      "uid": "bsk_A684EE490AA4874C8819F78A54BE",
+      "source_url": "https://skillhub.cn/skills/clawhub_seanwyngaard/social-media-content-calendar",
+      "resolved_url": "https://api.skillhub.cn/api/v1/download?slug=%40clawhub_seanwyngaard%2Fsocial-media-content-calendar\u0026version=1.0.0",
       "version": "1.0.0",
       "name": "social-media-content-calendar",
-      "description": "基于社交媒体运营方法，将业务目标转化为可执行的周度或月度内容日历；覆盖内容支柱、平台适配、素材依赖、发布节奏、转化动作和复盘指标。",
+      "description": "Generate structured social media content calendars with platform-specific posts, hashtags, and scheduling. Use when creating social media plans, content calendars, or social media management deliverables for clients.",
       "category": "chat",
       "market_visible": false,
-      "archive_sha256": "d68bebc32609989202a5b55849155b2ef8084c456be85eb05ef2b5c491d9f361",
-      "tree_sha256": "87d3d2f9792f281edf9467efc99741370f6a8a7397a115cbad3153112d708d3f",
-      "archive_size": 2021,
-      "package_file": "packages/bsk_8B81C0C653E35561065D445BCE7B.zip"
+      "archive_sha256": "50af33113688da8f968d499318e50a050385ce810884abbbc1425972bf241839",
+      "tree_sha256": "deaad252691e2c198e288760277e97acdae340b876172f6ad5c9c28434d4b2a0",
+      "archive_size": 3194,
+      "package_file": "packages/bsk_A684EE490AA4874C8819F78A54BE.zip"
     },
     {
       "key": "clawhub_jiangtaoid/social-media-operator",

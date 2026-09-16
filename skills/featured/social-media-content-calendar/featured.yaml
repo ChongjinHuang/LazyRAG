@@ -6,7 +6,7 @@ status: published
 default_locale: zh-CN
 provider: SkillHub
 skill:
-  source_url: featured/social-media-content-calendar/skill
+  source_url: https://skillhub.cn/skills/clawhub_seanwyngaard/social-media-content-calendar
   category: chat
   required_version: 1.0.0
 placement:
@@ -43,7 +43,7 @@ presentation:
     result_summary: 查看 社媒内容日历 的三个完整示例
   detail:
     title: 社媒内容日历
-    description: 同样基于社交媒体运营 Skill，专注把目标转化为周度或月度内容日历，明确内容支柱、选题组合、平台改编、负责人、指标和复盘节奏。 来源：https://skillhub.cn/skills/clawhub_jiangtaoid/social-media-operator，经
+    description: 基于社交媒体内容日历 Skill，把目标转化为周度或月度内容排期，明确内容支柱、选题组合、平台改编、负责人、指标和复盘节奏。 来源：https://skillhub.cn/skills/clawhub_seanwyngaard/social-media-content-calendar，经
       LazyMind 适配。
     attachment_hint: 活动节点、产品计划、目标人群、可用渠道和团队产能
 tasks:
