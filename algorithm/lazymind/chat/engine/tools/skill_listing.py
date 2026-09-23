@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import uuid
 from typing import Any
 
 
@@ -48,11 +49,12 @@ def core_skill_search(request: dict[str, Any]) -> dict[str, Any]:
     return {'status': 'ok', 'skills': skills}
 
 
-def _active_skill_names_from_history(history: list[dict[str, Any]]) -> list[str]:
-    activated: list[str] = []
-    seen: set[str] = set()
+def _loaded_skill_bodies(history: list[dict[str, Any]]) -> set[tuple[str, str, str]]:
+    """Only a paired successful tool result proves that L2 reached the model."""
+    calls: dict[str, str] = {}
+    loaded: set[tuple[str, str, str]] = set()
     for message in history:
-        for tool_call in message.get('tool_calls') or []:
+        for tool_call in (message.get('tool_calls') or []) if message.get('role') == 'assistant' else []:
             if not isinstance(tool_call, dict):
                 continue
             function = tool_call.get('function')
@@ -67,10 +69,24 @@ def _active_skill_names_from_history(history: list[dict[str, Any]]) -> list[str]
                     continue
             if isinstance(arguments, dict) and isinstance(arguments.get('name'), str):
                 name = arguments['name'].strip()
-                if name and name not in seen:
-                    seen.add(name)
-                    activated.append(name)
-    return activated
+                if name and tool_call.get('id'):
+                    calls[tool_call['id']] = name
+        if message.get('role') != 'tool' or message.get('tool_call_id') not in calls:
+            continue
+        payload = message.get('content')
+        if isinstance(payload, str):
+            try:
+                payload = json.loads(payload)
+            except (ValueError, TypeError):
+                continue
+        if not isinstance(payload, dict) or payload.get('status') != 'ok':
+            continue
+        content = payload.get('content')
+        if not isinstance(content, str) or not content.strip():
+            continue
+        name = str(payload.get('name') or calls[message['tool_call_id']]).strip()
+        loaded.add((name, str(payload.get('revision_id') or ''), content))
+    return loaded
 
 
 def append_loaded_skill_invocations(
@@ -82,16 +98,17 @@ def append_loaded_skill_invocations(
     """Append first-load @Skill bodies as get_skill tool history, not prompt L1."""
     messages = list(history or [])
     denied = {str(item).strip() for item in (excluded or []) if str(item).strip()}
-    present = set(_active_skill_names_from_history(messages))
+    present = _loaded_skill_bodies(messages)
     for item in loaded or []:
         key = str(item.get('skill_key') or '').strip()
         content = str(item.get('content') or '')
         if not key or key in denied or not content.strip():
             continue
-        basename = key.rsplit('/', 1)[-1]
-        if key in present or basename in present:
+        revision = str(item.get('revision_id') or '')
+        identity = (key, revision, content)
+        if identity in present:
             continue
-        call_id = f'skill-invoke-{key}'
+        call_id = f'skill-invoke-{uuid.uuid4().hex}'
         messages.append({
             'role': 'assistant',
             'content': '',
@@ -111,12 +128,11 @@ def append_loaded_skill_invocations(
             'content': json.dumps({
                 'status': 'ok',
                 'name': key,
-                'revision_id': str(item.get('revision_id') or ''),
+                'revision_id': revision,
                 'content': content,
             }, ensure_ascii=False),
         })
-        present.add(key)
-        present.add(basename)
+        present.add(identity)
     return messages
 
 
