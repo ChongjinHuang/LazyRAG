@@ -92,6 +92,9 @@ def _summarize_tool_result(result: Any) -> dict[str, Any]:
         return summary
     if 'ok' in result:
         summary['ok'] = result.get('ok')
+    for key in ('error_type', 'dependency', 'exit_code'):
+        if key in result:
+            summary[key] = str(result[key])[:240]
     msg = result.get('msg')
     if msg:
         summary['msg'] = str(msg)[:240]

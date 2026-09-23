@@ -4,6 +4,7 @@ from lazyllm.tools.agent import ToolManager
 from lazyllm.tools.agent.toolError import ToolExecutionError
 from lazymind.chat.engine.agent_runtime.skill_errors import classify_skill_failure
 from lazymind.chat.engine.agent_runtime.tool_call_guard import ToolExecutionMiddleware
+from lazymind.chat.engine.agent_runtime.tool_call_guard import _summarize_tool_result
 from lazymind.chat.engine.tools.workspace_context import WorkspaceContext
 
 
@@ -44,6 +45,16 @@ def test_do_not_override_existing_contract(result):
 def test_missing_env_takes_priority():
     result = {'ok': False, 'value': 'Required runtime not found: node', 'missing_env': ['SERVICE_KEY']}
     assert classify_skill_failure(result) == {**result, 'error_type': 'missing_env'}
+
+
+def test_long_script_error_keeps_diagnostics_in_backend_log_summary():
+    result = classify_skill_failure({'ok': False, 'value':
+                                    'Skill script execution failed with exit code 1: '
+                                    + 'traceback line\n' * 100
+                                    + "ModuleNotFoundError: No module named 'plotly'"})
+    assert _summarize_tool_result(result) == {
+        'ok': False, 'error_type': 'missing_dependency', 'dependency': 'plotly', 'exit_code': '1',
+    }
 
 
 @pytest.mark.parametrize('trusted', [True, False])
