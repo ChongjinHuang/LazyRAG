@@ -3,6 +3,7 @@ import json
 import pytest
 
 from lazymind.chat.engine.tools.skill_listing import append_loaded_skill_invocations
+from lazymind.chat.engine.tools.skill_listing import restore_loaded_skill_runtime
 
 
 SELECTED = {'skill_key': 'external/paper', 'revision_id': 'rev2', 'content': '# Paper\nFull instructions.'}
@@ -62,3 +63,30 @@ def test_unpaired_tool_result_cannot_suppress_body():
     history = history_for({'status': 'ok', 'name': 'external/paper',
                            'revision_id': 'rev2', 'content': SELECTED['content']})[1:]
     assert len(append_loaded_skill_invocations(history, [SELECTED])) == 3
+
+
+def test_replayed_body_restores_resource_guard_without_running_script(tmp_path):
+    from lazyllm.tools.agent.skill_manager import SkillManager
+    root = tmp_path / 'demo'
+    (root / 'scripts').mkdir(parents=True)
+    content = '---\nname: demo\ndescription: test\n---\nUse scripts/check.py.\n'
+    (root / 'SKILL.md').write_text(content)
+    (root / 'scripts' / 'check.py').write_text('raise RuntimeError("must not execute during reload")')
+    history = append_loaded_skill_invocations([], [{'skill_key': 'demo', 'content': content}])
+    manager = SkillManager(dir=str(tmp_path), skills=['demo'])
+    assert manager._read_loaded_skill_resource('demo', 'scripts/check.py')['error'] == 'skill_not_loaded'
+    restore_loaded_skill_runtime(manager, history)
+    assert manager._read_loaded_skill_resource('demo', 'scripts/check.py')['status'] == 'ok'
+
+
+def test_replayed_body_cannot_bypass_excluded_skill(tmp_path):
+    from lazyllm.tools.agent.skill_manager import SkillManager
+    root = tmp_path / 'private'
+    root.mkdir()
+    content = '---\nname: private\ndescription: test\n---\nPrivate body.'
+    (root / 'SKILL.md').write_text(content)
+    history = append_loaded_skill_invocations([], [{'skill_key': 'private', 'content': content}])
+    manager = SkillManager(dir=str(tmp_path), excluded_skills=['private'])
+    restore_loaded_skill_runtime(manager, history)
+    assert manager.get_skill('private')['status'] == 'error'
+    assert not manager._loaded_skills

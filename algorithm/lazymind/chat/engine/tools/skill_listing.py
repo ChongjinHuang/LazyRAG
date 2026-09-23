@@ -136,8 +136,28 @@ def append_loaded_skill_invocations(
     return messages
 
 
+def restore_loaded_skill_runtime(manager: Any, history: list[dict[str, Any]] | None) -> None:
+    """Rehydrate resource declarations, not just synthetic model-facing L2 history.
+
+    Use the public loader so visibility, exclusions, size limits and resource
+    discovery remain authoritative; never seed the private cache from history.
+    This only reads authorized Skills and does not run their scripts.
+    """
+    if manager is None:
+        return
+    for name in sorted({item[0] for item in _loaded_skill_bodies(history or [])}):
+        try:
+            manager.get_skill(name)
+        except Exception as exc:
+            # A stale/deleted Skill must not prevent the conversation from starting.
+            # The normal get_skill tool retains the detailed error for a retry.
+            import lazyllm
+            lazyllm.LOG.warning(f'[SkillRuntime] history reload failed: {type(exc).__name__}')
+
+
 __all__ = [
     'append_loaded_skill_invocations',
     'compose_prompt_skills',
     'core_skill_search',
+    'restore_loaded_skill_runtime',
 ]
