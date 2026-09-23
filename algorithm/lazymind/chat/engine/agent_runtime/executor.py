@@ -35,6 +35,7 @@ from .tool_call_guard import (
     ToolExecutionMiddleware,
 )
 from .tool_limit_control import tool_limit_decision_coordinator
+from .skill_sandbox import create_skill_sandbox
 
 
 def _sanitize_tools(tools: list[Any]) -> list[Any]:
@@ -154,6 +155,7 @@ class AgentExecutor:
         repeat_monitor = ExactRepeatMonitor()
         notice_buffer = OneShotNoticeBuffer()
         kwargs = {
+            'sandbox': create_skill_sandbox(),
             'stream': True,
             'max_retries': options.max_retries or _cfg['max_retries'],
             'enable_builtin_tools': (
