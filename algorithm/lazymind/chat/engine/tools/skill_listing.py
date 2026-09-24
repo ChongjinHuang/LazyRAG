@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 import uuid
 from typing import Any
@@ -78,13 +79,24 @@ def _loaded_skill_bodies(history: list[dict[str, Any]]) -> set[tuple[str, str, s
             try:
                 payload = json.loads(payload)
             except (ValueError, TypeError):
-                continue
+                try:
+                    payload = ast.literal_eval(payload)
+                except (ValueError, SyntaxError):
+                    continue
+        if (isinstance(payload, dict) and payload.get('ok') is True
+                and isinstance(payload.get('value'), dict)):
+            payload = payload['value']
         if not isinstance(payload, dict) or payload.get('status') != 'ok':
             continue
         content = payload.get('content')
         if not isinstance(content, str) or not content.strip():
             continue
-        name = str(payload.get('name') or calls[message['tool_call_id']]).strip()
+        requested_name = calls[message['tool_call_id']]
+        result_name = payload.get('name')
+        if result_name is not None and (
+                not isinstance(result_name, str) or result_name.strip() != requested_name):
+            continue
+        name = requested_name
         loaded.add((name, str(payload.get('revision_id') or ''), content))
     return loaded
 

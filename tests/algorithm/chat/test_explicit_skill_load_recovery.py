@@ -65,6 +65,30 @@ def test_unpaired_tool_result_cannot_suppress_body():
     assert len(append_loaded_skill_invocations(history, [SELECTED])) == 3
 
 
+def test_result_name_must_match_paired_request():
+    history = history_for({
+        'status': 'ok', 'name': 'internal/other',
+        'revision_id': 'rev2', 'content': SELECTED['content'],
+    })
+    result = append_loaded_skill_invocations(history, [SELECTED])
+    assert len(result) == 4
+    assert json.loads(result[-1]['content'])['name'] == SELECTED['skill_key']
+
+
+@pytest.mark.parametrize('serialized', [
+    repr({'status': 'ok', 'name': 'external/paper',
+          'revision_id': 'rev2', 'content': SELECTED['content']}),
+    json.dumps({'ok': True, 'value': {
+        'status': 'ok', 'name': 'external/paper',
+        'revision_id': 'rev2', 'content': SELECTED['content'],
+    }}),
+])
+def test_real_tool_result_serializations_suppress_duplicate_body(serialized):
+    history = history_for({})
+    history[-1]['content'] = serialized
+    assert append_loaded_skill_invocations(history, [SELECTED]) == history
+
+
 def test_replayed_body_restores_resource_guard_without_running_script(tmp_path):
     from lazyllm.tools.agent.skill_manager import SkillManager
     root = tmp_path / 'demo'
@@ -75,6 +99,21 @@ def test_replayed_body_restores_resource_guard_without_running_script(tmp_path):
     history = append_loaded_skill_invocations([], [{'skill_key': 'demo', 'content': content}])
     manager = SkillManager(dir=str(tmp_path), skills=['demo'])
     assert manager._read_loaded_skill_resource('demo', 'scripts/check.py')['error'] == 'skill_not_loaded'
+    restore_loaded_skill_runtime(manager, history)
+    assert manager._read_loaded_skill_resource('demo', 'scripts/check.py')['status'] == 'ok'
+
+
+@pytest.mark.parametrize('serialize', [repr, lambda value: json.dumps({'ok': True, 'value': value})])
+def test_real_cross_turn_result_restores_resource_guard(tmp_path, serialize):
+    from lazyllm.tools.agent.skill_manager import SkillManager
+    root = tmp_path / 'demo'
+    (root / 'scripts').mkdir(parents=True)
+    content = '---\nname: demo\ndescription: test\n---\nUse scripts/check.py.\n'
+    (root / 'SKILL.md').write_text(content)
+    (root / 'scripts' / 'check.py').write_text('print("ok")')
+    history = history_for({}, name='demo')
+    history[-1]['content'] = serialize({'status': 'ok', 'name': 'demo', 'content': content})
+    manager = SkillManager(dir=str(tmp_path), skills=['demo'])
     restore_loaded_skill_runtime(manager, history)
     assert manager._read_loaded_skill_resource('demo', 'scripts/check.py')['status'] == 'ok'
 
