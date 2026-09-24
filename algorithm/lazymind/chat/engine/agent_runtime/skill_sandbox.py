@@ -8,7 +8,6 @@ import sys
 
 import lazyllm
 from lazyllm.tools.sandbox.dummy_sandbox import DummySandbox
-from lazyllm.tools.sandbox.sandbox_base import create_sandbox
 
 
 class SkillScriptSandbox(DummySandbox):
@@ -61,8 +60,17 @@ class SkillScriptSandbox(DummySandbox):
             self._cleanup_context(context)
 
 
-def create_skill_sandbox():
-    """Only adapt the local default; retain explicitly configured sandbox providers."""
+def configure_skill_sandbox(skill_manager):
+    """Use the interpreter-aware sandbox only for local Skill scripts.
+
+    ReactAgent shares its ``sandbox`` argument with ToolManager. Passing this
+    sandbox to the agent would therefore route ordinary tools through the
+    DummySandbox and serialize structured MCP results. SkillManager already
+    owns a separate sandbox instance, so replace only that local default and
+    preserve explicitly configured remote providers.
+    """
+    if skill_manager is None:
+        return None
     if lazyllm.config['sandbox_type'] == 'dummy':
-        return SkillScriptSandbox()
-    return create_sandbox()
+        skill_manager._sandbox = SkillScriptSandbox()
+    return skill_manager._sandbox

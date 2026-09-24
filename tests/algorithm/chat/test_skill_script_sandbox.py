@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -32,7 +33,7 @@ def test_interpreter_selection_preserves_arguments_cwd_and_env(tmp_path, monkeyp
     argv, kwargs = calls[0]
     assert argv[0] == runtime
     assert argv[2:] == ['a b', ';echo nope']
-    assert kwargs['cwd'].endswith('/subdir')
+    assert os.path.basename(kwargs['cwd']) == 'subdir'
     assert kwargs['env']['EXAMPLE'] == 'value'
     assert result['status'] == 'ok'
     assert not os.path.exists(argv[1])
@@ -81,20 +82,24 @@ def test_path_escape_is_rejected_and_sandbox_cleaned(tmp_path, monkeypatch):
     assert not root.exists()
 
 
-def test_non_default_provider_is_preserved(monkeypatch):
+def test_non_default_provider_is_preserved():
     sentinel = object()
-    monkeypatch.setattr(mod, 'create_sandbox', lambda: sentinel)
+    manager = SimpleNamespace(_sandbox=sentinel)
     with mod.lazyllm.config.temp('sandbox_type', 'remote'):
-        assert mod.create_skill_sandbox() is sentinel
+        assert mod.configure_skill_sandbox(manager) is sentinel
+    assert manager._sandbox is sentinel
 
 
-def test_executor_wires_the_skill_interpreter(monkeypatch):
+def test_executor_wires_the_interpreter_only_to_skill_manager(monkeypatch):
     from lazymind.chat.engine.agent_runtime import (
         AgentExecutionOptions, AgentExecutor, AgentRole, AgentRunPlan, PromptBuilder,
     )
     from lazymind.chat.engine.agent_runtime import executor
 
-    constructor = MagicMock(return_value=MagicMock())
+    manager = SimpleNamespace(_sandbox=object())
+    agent = MagicMock()
+    agent._skill_manager = manager
+    constructor = MagicMock(return_value=agent)
     monkeypatch.setattr(executor._agent_mod, 'ReactAgent', constructor)
     plan = AgentRunPlan(
         role=AgentRole.CHAT,
@@ -102,7 +107,8 @@ def test_executor_wires_the_skill_interpreter(monkeypatch):
         tools=[], stop_tools=[], execution_options=AgentExecutionOptions(),
     )
     AgentExecutor().create_agent('llm', plan)
-    assert isinstance(constructor.call_args.kwargs['sandbox'], mod.SkillScriptSandbox)
+    assert 'sandbox' not in constructor.call_args.kwargs
+    assert isinstance(manager._sandbox, mod.SkillScriptSandbox)
 
 
 def test_skill_manager_materializes_and_runs_real_javascript(tmp_path):
