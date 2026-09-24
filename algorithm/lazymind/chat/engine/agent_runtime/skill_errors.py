@@ -10,6 +10,11 @@ import re
 from typing import Any
 
 
+def _is_node_path(specifier: str) -> bool:
+    return (specifier.startswith(('.', '/', '\\'))
+            or re.match(r'^[A-Za-z]:[\\/]', specifier) is not None)
+
+
 def classify_skill_failure(result: Any) -> Any:
     if (not isinstance(result, dict) or result.get('ok') is not False
             or result.get('needs_approval') or result.get('error_type')):
@@ -33,7 +38,7 @@ def classify_skill_failure(result: Any) -> Any:
         fields['error_type'] = 'unsupported_runtime'
     elif runtime or module:
         fields.update(error_type='missing_dependency', dependency=(runtime or module).group(1))
-    elif node_module and not node_module.group(1).startswith(('.', '/')):
+    elif node_module and not _is_node_path(node_module.group(1)):
         # A missing relative/absolute script is not evidence of a missing package.
         fields.update(error_type='missing_dependency', dependency=node_module.group(1))
     else:
