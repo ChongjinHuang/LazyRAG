@@ -111,9 +111,93 @@ def _artifact_metadata(
 def resolve_chat_artifact(arguments):
     permission = get_workspace_permission_context()
     files = FileResolution(default_root=permission.cwd if permission else None)
-    if arguments.get('content_type') == 'file':
+    if arguments.get('content_type') == 'file' and not _inline_html(arguments.get('content')):
         arguments['content'] = files.local(arguments.get('content'))
     return files.finish(arguments)
+
+
+def _inline_html(content: Any) -> bool:
+    text = content if isinstance(content, str) else ''
+    stripped = text.lstrip()
+    return stripped.lower().startswith(('<!doctype html', '<html')) and '</html>' in stripped.lower()
+
+
+def _verify_image_signature(filename: str, source: str) -> None:
+    suffix = os.path.splitext(filename)[1].lower()
+    if suffix not in {'.png', '.jpg', '.jpeg', '.gif', '.webp'}:
+        return
+    with open_input_file(source) as handle:
+        header = handle.read(12)
+    valid = {
+        '.png': header.startswith(b'\x89PNG\r\n\x1a\n'),
+        '.jpg': header.startswith(b'\xff\xd8\xff'),
+        '.jpeg': header.startswith(b'\xff\xd8\xff'),
+        '.gif': header.startswith((b'GIF87a', b'GIF89a')),
+        '.webp': header.startswith(b'RIFF') and header[8:12] == b'WEBP',
+    }[suffix]
+    if not valid:
+        raise ToolExecutionError(
+            f'{filename!r} does not contain valid {suffix[1:].upper()} image data; '
+            'save generated HTML or text with content_type="text" and a matching extension.'
+        )
+
+
+def _save_inline_artifact(
+    safe_name: str, content: Any, normalized_type: str, caption: Optional[str],
+    change_summary: Optional[str], logical_key: Optional[str],
+    user_id: str, conversation_id: str,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    value = {'data': content} if normalized_type == 'json' else {
+        'text': str(content if content is not None else ''),
+    }
+    encoded_value = json.dumps(
+        value, ensure_ascii=False, separators=(',', ':'),
+    ).encode('utf-8')
+    if len(encoded_value) > _MAX_ARTIFACT_BYTES:
+        raise ToolExecutionError('artifact content exceeds the 2 MiB limit')
+    metadata = _artifact_metadata(encoded_value, change_summary, logical_key)
+    artifact_id = str(uuid.uuid4())
+    workspace_path = f'.generated_artifacts/{artifact_id}/{safe_name}'
+    _, mirrored_path = _resolve_workspace_path(workspace_path, user_id, conversation_id)
+    mirrored_dir = os.path.dirname(mirrored_path)
+    temporary = os.path.join(mirrored_dir, f'.{uuid.uuid4().hex[:8]}.tmp')
+    mirrored_bytes = (
+        value['text'].encode('utf-8') if normalized_type == 'text'
+        else json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
+    )
+    os.makedirs(mirrored_dir, exist_ok=False)
+    try:
+        with open(temporary, 'xb') as handle:
+            handle.write(mirrored_bytes)
+        os.replace(temporary, mirrored_path)
+    except Exception:
+        shutil.rmtree(mirrored_dir, ignore_errors=True)
+        raise
+    event = {
+        'tag': 'artifact_created', 'artifact_id': artifact_id,
+        'filename': safe_name, 'content_type': normalized_type,
+        'value': value, 'caption': caption, **metadata,
+    }
+    result = {
+        'artifact_id': artifact_id, 'filename': safe_name,
+        'content_type': normalized_type, 'workspace_path': workspace_path,
+        'file_markdown': _file_markdown(safe_name, artifact_id),
+        'message': (
+            f"Saved downloadable artifact '{safe_name}'. Pass workspace_path to another "
+            'tool when it needs the generated file, including MailToolkit_compose_draft.'
+        ),
+    }
+    return result, event
+
+
+def save_inline_answer_artifact(
+    filename: str, content: str, *, user_id: str, conversation_id: str,
+) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    """Persist a complete final answer and return its event for the chat stream."""
+    safe_name = _safe_filename(filename, 'text')
+    return _save_inline_artifact(
+        safe_name, content, 'text', None, None, None, user_id, conversation_id,
+    )
 
 
 @fc_register(host_file=resolve_chat_artifact)
@@ -161,68 +245,31 @@ def save_chat_artifact(
     normalized_type = str(content_type or 'text').strip().lower()
     if normalized_type not in {'text', 'json', 'file'}:
         raise ToolExecutionError("content_type must be 'text', 'json', or 'file'")
+    if normalized_type == 'file' and _inline_html(content) and str(filename).lower().endswith('.html'):
+        normalized_type = 'text'
     safe_name = _safe_filename(filename, normalized_type)
+    if normalized_type != 'file' and os.path.splitext(safe_name)[1].lower() in {
+        '.png', '.jpg', '.jpeg', '.gif', '.webp',
+    }:
+        raise ToolExecutionError('image filenames require content_type="file" and valid image data')
     normalized_caption = _normalize_caption(caption)
     if normalized_type == 'file':
         return _finish_after_save(save_chat_file(
             safe_name, str(content or ''), normalized_caption,
             change_summary=change_summary, logical_key=logical_key,
         ), final_response)
-    if normalized_type == 'json':
-        value = {'data': content}
-    else:
-        text = str(content if content is not None else '')
-        value = {'text': text}
-    # Measure the actual event value rather than only the raw content: JSON escaping
-    # can make the persisted payload larger than its source string.
-    encoded_value = json.dumps(
-        value, ensure_ascii=False, separators=(',', ':'),
-    ).encode('utf-8')
-    if len(encoded_value) > _MAX_ARTIFACT_BYTES:
-        raise ToolExecutionError('artifact content exceeds the 2 MiB limit')
-    metadata = _artifact_metadata(encoded_value, change_summary, logical_key)
-
-    artifact_id = str(uuid.uuid4())
     user_id, conversation_id = _current_artifact_scope()
-    # Tool results are model-facing locators, so keep their separator stable
-    # across hosts while the resolver maps them to the native filesystem.
-    workspace_path = f'.generated_artifacts/{artifact_id}/{safe_name}'
-    _, mirrored_path = _resolve_workspace_path(workspace_path, user_id, conversation_id)
-    mirrored_dir = os.path.dirname(mirrored_path)
-    temporary = os.path.join(mirrored_dir, f'.{uuid.uuid4().hex[:8]}.tmp')
-    mirrored_bytes = (
-        str(content if content is not None else '').encode('utf-8')
-        if normalized_type == 'text'
-        else json.dumps(content, ensure_ascii=False, indent=2).encode('utf-8')
+    result, event = _save_inline_artifact(
+        safe_name, content, normalized_type, normalized_caption,
+        change_summary, logical_key, user_id, conversation_id,
     )
-    os.makedirs(mirrored_dir, exist_ok=False)
     try:
-        with open(temporary, 'xb') as handle:
-            handle.write(mirrored_bytes)
-        os.replace(temporary, mirrored_path)
-        _write_agent_data(
-            'artifact_created',
-            artifact_id=artifact_id,
-            filename=safe_name,
-            content_type=normalized_type,
-            value=value,
-            caption=normalized_caption,
-            **metadata,
-        )
+        _write_agent_data('artifact_created', **{k: v for k, v in event.items() if k != 'tag'})
     except Exception:
-        shutil.rmtree(mirrored_dir, ignore_errors=True)
+        _, mirrored_path = _resolve_workspace_path(result['workspace_path'], user_id, conversation_id)
+        shutil.rmtree(os.path.dirname(mirrored_path), ignore_errors=True)
         raise
-    return _finish_after_save({
-        'artifact_id': artifact_id,
-        'filename': safe_name,
-        'content_type': normalized_type,
-        'workspace_path': workspace_path,
-        'file_markdown': _file_markdown(safe_name, artifact_id),
-        'message': (
-            f"Saved downloadable artifact '{safe_name}'. Pass workspace_path to another "
-            'tool when it needs the generated file, including MailToolkit_compose_draft.'
-        ),
-    }, final_response)
+    return _finish_after_save(result, final_response)
 
 
 def save_chat_file(
@@ -237,6 +284,7 @@ def save_chat_file(
     filename = _safe_filename(filename, 'file')
     user_id, conversation_id = _current_artifact_scope()
     source = _resolve_source_file(path, user_id, conversation_id)
+    _verify_image_signature(filename, source)
     artifact_id = artifact_id or str(uuid.uuid4())
     destination_dir = _published_file_directory(user_id, conversation_id, artifact_id)
     destination = os.path.join(destination_dir, filename)

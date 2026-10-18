@@ -51,6 +51,7 @@ from lazymind.chat.service.document_selection import (
     resolve_document_selection_context,
 )
 from lazymind.chat.service.component.tool_policy import build_sidechat_tool_configs
+from lazymind.chat.service.component.artifact_recovery import complete_inline_artifact
 from lazymind.chat.service.component import (
     AgentEventFrameTranslator,
     ASK_USER_TOOL_CONFIG,
@@ -2322,9 +2323,39 @@ async def _handle_chat_impl(
                             # AgentExecutor propagates future exceptions before yielding final.
                             final_result = payload
 
+            recovered_artifact = None
+            if (
+                enable_chat_exports and task_profile
+                and (
+                    task_profile.deliverable_kind == 'artifact'
+                    or ('保存' in language_query and ('下载' in language_query or '产物' in language_query))
+                )
+                and not translator.ask_pending_emitted
+                and not translator.artifact_count
+            ):
+                candidate = complete_inline_artifact(final_result)
+                if candidate:
+                    from lazymind.chat.engine.tools.chat_artifact import save_inline_answer_artifact
+                    filename, content = candidate
+                    recovered_artifact, event = save_inline_answer_artifact(
+                        filename, content, user_id=user_id, conversation_id=conversation_id,
+                    )
+                    for frame in translator.feed(event):
+                        cost = round(time.time() - start_time, 3)
+                        yield log_and_emit_frame(
+                            frame, cost, query, conversation.session_id, tag='ARTIFACT_RECOVERY',
+                        )
+
             for frame in translator.finish(final_result):
                 cost = round(time.time() - start_time, 3)
                 yield log_and_emit_frame(frame, cost, query, conversation.session_id, tag='FINISH')
+            if recovered_artifact:
+                yield log_and_emit_frame(
+                    {'think': None, 'text': '\n\n' + recovered_artifact['file_markdown'],
+                     'sources': []},
+                    round(time.time() - start_time, 3), query,
+                    conversation.session_id, tag='ARTIFACT_RECOVERY_LINK',
+                )
 
             outcome = RunOutcome.SUCCEEDED
 

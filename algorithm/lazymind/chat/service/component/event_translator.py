@@ -132,6 +132,7 @@ class AgentEventFrameTranslator:
         self.ask_pending_emitted = False
         self.capability_dependency_emitted = False
         self.tool_call_turns = 0
+        self.artifact_count = 0
         self.metrics = RunMetricsTracker(clock or time.monotonic, started_at=started_at)
         self.model_events: list[dict[str, Any]] = []
         self.last_metrics: Optional[dict[str, Any]] = None
@@ -180,6 +181,7 @@ class AgentEventFrameTranslator:
             frames.append(_stream_frame(extra={'task_created': task_created}))
             return frames
         if event_type == 'artifact_created':
+            self.artifact_count += 1
             artifact = {k: v for k, v in event.items() if k != 'tag'}
             frames.append(_stream_frame(extra={'artifact_created': artifact}))
             return frames

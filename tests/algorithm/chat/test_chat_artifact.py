@@ -9,6 +9,7 @@ from lazymind.chat.engine.tools import chat_artifact, conversation_workspace
 from lazymind.chat.engine.tools.file_resources.tools import read_file_resource
 from lazyllm.tools.agent.file_tool import write, ls
 from lazymind.chat.service.component.event_translator import AgentEventFrameTranslator
+from lazymind.chat.service.component.artifact_recovery import complete_inline_artifact
 
 
 @pytest.mark.parametrize(
@@ -133,6 +134,53 @@ def test_save_inline_artifact_exposes_workspace_path(
     )
 
 
+def test_html_passed_as_file_content_is_saved_as_text(tmp_path, monkeypatch):
+    monkeypatch.setitem(conversation_workspace._cfg._impl, 'agentic_workspace', str(tmp_path))
+    monkeypatch.setattr(chat_artifact, '_current_artifact_scope',
+                        lambda: ('user-1', 'conversation-1'))
+    emitted = []
+    monkeypatch.setattr(chat_artifact, '_write_agent_data',
+                        lambda tag, **payload: emitted.append({'tag': tag, **payload}))
+    html = '<!DOCTYPE html><html><title>出差申请流程图</title><body>完成</body></html>'
+    result = chat_artifact.save_chat_artifact(
+        '出差申请流程图.html', html, content_type='file', final_response='已完成。',
+    )
+    assert result['content_type'] == 'text'
+    assert emitted[0]['value'] == {'text': html}
+    assert result['_agent_control']['stop'] is True
+
+
+def test_inline_artifact_cleans_up_when_event_cannot_be_published(tmp_path, monkeypatch):
+    monkeypatch.setitem(conversation_workspace._cfg._impl, 'agentic_workspace', str(tmp_path))
+    monkeypatch.setattr(chat_artifact, '_current_artifact_scope',
+                        lambda: ('user-1', 'conversation-1'))
+
+    def fail_publish(*_args, **_kwargs):
+        raise RuntimeError('event unavailable')
+
+    monkeypatch.setattr(chat_artifact, '_write_agent_data', fail_publish)
+    with pytest.raises(RuntimeError, match='event unavailable'):
+        chat_artifact.save_chat_artifact('diagram.html', '<html></html>')
+    workspace = Path(conversation_workspace.chat_agent_workspace('user-1', 'conversation-1'))
+    assert list((workspace / '.generated_artifacts').iterdir()) == []
+
+
+def test_recover_complete_inline_artifact_only():
+    html = '<!DOCTYPE html><html><title>出差申请流程图</title><body>完成</body></html>'
+    assert complete_inline_artifact({'text': f'文件内容：\n```html\n{html}\n```'}) == (
+        '出差申请流程图.html', html,
+    )
+    assert complete_inline_artifact('```editable\n# 出差申请流程图\nWBS经理 → 直系领导\n```') == (
+        '出差申请流程图.md', '# 出差申请流程图\nWBS经理 → 直系领导',
+    )
+    nested = '```editable\n# 出差申请流程图\n\n```mermaid\nflowchart TD\nA --> B\n```\n```'
+    assert complete_inline_artifact(nested) == (
+        '出差申请流程图.md', '# 出差申请流程图\n\n```mermaid\nflowchart TD\nA --> B\n```',
+    )
+    assert complete_inline_artifact('<html><body>unfinished') is None
+    assert complete_inline_artifact('流程建议如下') is None
+
+
 def test_save_chat_artifact_file_rejects_source_outside_agent_workspace(
     tmp_path, monkeypatch,
 ):
@@ -149,6 +197,19 @@ def test_save_chat_artifact_file_rejects_source_outside_agent_workspace(
         chat_artifact.save_chat_artifact(
             'outside.zip', str(outside), content_type='file',
         )
+
+
+def test_save_chat_artifact_rejects_html_masquerading_as_png(tmp_path, monkeypatch):
+    monkeypatch.setitem(conversation_workspace._cfg._impl, 'agentic_workspace', str(tmp_path))
+    monkeypatch.setattr(chat_artifact, '_current_artifact_scope',
+                        lambda: ('user-1', 'conversation-1'))
+    workspace = Path(conversation_workspace.chat_agent_workspace('user-1', 'conversation-1'))
+    workspace.mkdir(parents=True)
+    (workspace / 'fake.png').write_text('<!doctype html><html></html>', encoding='utf-8')
+    with pytest.raises(ToolExecutionError, match='does not contain valid PNG'):
+        chat_artifact.save_chat_artifact('flowchart.png', 'fake.png', content_type='file')
+    with pytest.raises(ToolExecutionError, match='image filenames require'):
+        chat_artifact.save_chat_artifact('flowchart.png', '<html></html>', content_type='text')
 
 
 def test_workspace_file_tools_share_chat_agent_workspace(tmp_path, monkeypatch):

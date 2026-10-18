@@ -822,6 +822,17 @@ def test_diagram_skill_request_routes_to_downloadable_artifact() -> None:
     assert 'artifact' in selected_prompt_modules(profile)
 
 
+def test_diagram_clarification_followup_stays_artifact() -> None:
+    profile = resolve_task_profile(
+        '严格按 WBS 经理 → 直系领导 → 三级部门长 → 二级部门长串行审批，'
+        '任一环节驳回后退回申请人修改；无超时自动通过。'
+        '信息已齐全，请直接生成并保存可下载的流程图产物。',
+        enable_llm_fallback=False,
+    )
+    assert profile.primary_outcome == 'create'
+    assert profile.deliverable_kind == 'artifact'
+
+
 def test_explaining_an_approval_flow_does_not_request_an_artifact() -> None:
     profile = resolve_task_profile('解释一下出差申请的审批流程', enable_llm_fallback=False)
     assert profile.deliverable_kind == 'direct_answer'

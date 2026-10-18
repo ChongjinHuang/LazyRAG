@@ -237,6 +237,9 @@ def _ordered_outcomes(text: str, *, current: bool) -> list[Outcome]:
         r'排查|诊断|修复)',
         '', text, flags=re.I,
     )
+    # Constraints such as "无超时自动通过" describe the artifact's behavior;
+    # they are not a request to diagnose a timeout.
+    routing_text = re.sub(r'(?:无|不设|没有)\s*超时(?:自动(?:通过|驳回))?', '', routing_text)
     found: list[tuple[int, int, Outcome]] = []
     priority = {
         'execute': 0, 'diagnose': 1, 'transform': 2, 'research': 3, 'analyze': 4,
@@ -257,6 +260,12 @@ def _ordered_outcomes(text: str, *, current: bool) -> list[Outcome]:
         found.append((research_match.start(), priority['research'], 'research'))
     found.sort(key=lambda item: (item[0], item[1]))
     outcomes = list(dict.fromkeys(outcome for _, _, outcome in found))
+    if 'create' in outcomes and re.search(
+        r'(?:生成|制作|创建|输出).{0,40}(?:保存|下载|产物|文件)|'
+        r'(?:保存|下载).{0,40}(?:生成|制作|创建|输出)',
+        routing_text, re.I,
+    ):
+        outcomes = ['create', *(item for item in outcomes if item != 'create')]
     # A document insertion is the enclosing outcome even when creating its content
     # is an earlier prerequisite. Keep create as a secondary outcome without
     # changing the normal ordering of unrelated multi-outcome requests.
