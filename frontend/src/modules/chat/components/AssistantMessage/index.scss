@@ -395,6 +395,18 @@
     flex: 0 0 auto;
     margin-right: 0;
   }
+
+  .artifact-file-btn {
+    width: auto;
+    max-width: 260px;
+    padding: 0 4px;
+
+    .ant-btn-icon + span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  }
 }
 
 .chat-sources-popover {

@@ -29,7 +29,7 @@ export default function ArtifactDownloadButton({ sessionId, historyId, currentEx
   return (
     <Tooltip title={t("chat.artifactPanelOpenMenu")}>
       <Button
-        className="tool-btn"
+        className="tool-btn artifact-file-btn"
         icon={<FileTextOutlined />}
         aria-label={t("chat.artifactPanelOpenMenu")}
         onClick={() => openConversationArtifactPanel({ conversationId: sessionId })}
