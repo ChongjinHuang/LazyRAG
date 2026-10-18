@@ -6,9 +6,9 @@ import ArtifactDownloadButton from './ArtifactDownloadButton';
 
 vi.mock('@/modules/chat/store/taskCenter', () => ({
   useTaskCenterStore: (selector: (state: {
-    artifactsByConversation: Record<string, Array<{ artifact_id: string }>>;
+    artifactsByConversation: Record<string, Array<{ artifact_id: string; history_id: string; filename: string }>>;
   }) => unknown) => selector({
-    artifactsByConversation: { 'conv-1': [{ artifact_id: 'artifact-1' }] },
+    artifactsByConversation: { 'conv-1': [{ artifact_id: 'artifact-1', history_id: 'turn-1', filename: '出差申请审批流程图.html' }] },
   }),
 }));
 
@@ -28,6 +28,9 @@ describe('ArtifactDownloadButton', () => {
     const open = vi.fn();
     window.addEventListener(CHAT_OPEN_ARTIFACT_PANEL_EVENT, open);
     render(<ArtifactDownloadButton sessionId="conv-1" historyId="turn-1" />);
+
+    expect(screen.getByRole('button', { name: 'chat.artifactPanelOpenMenu' }))
+      .toHaveTextContent('出差申请审批流程图.html');
 
     fireEvent.click(screen.getByRole('button'));
 
