@@ -15,9 +15,17 @@ operations:
     file: files/references/core-rules.md
     before_sha256: absent
   - op: upsert
+    path: references/design-details.md
+    file: files/references/design-details.md
+    before_sha256: absent
+  - op: upsert
     path: references/import-drawio.md
     file: files/references/import-drawio.md
     before_sha256: 2615ba8efb300ecc498df72223a91c6c712411efb38892fc779b583ad8b7b4ce
+  - op: upsert
+    path: references/import-guide.md
+    file: files/references/import-guide.md
+    before_sha256: absent
   - op: upsert
     path: references/import-mermaid.md
     file: files/references/import-mermaid.md
@@ -27,13 +35,37 @@ operations:
     file: files/references/output-spec.md
     before_sha256: 374a4f1f7e70e5e970d6df427516273fe67e7616aa3a9d06c5787924daa1ed9b
   - op: upsert
+    path: references/presentation.md
+    file: files/references/presentation.md
+    before_sha256: absent
+  - op: upsert
+    path: references/profiles.md
+    file: files/references/profiles.md
+    before_sha256: 51f6d24e40eca1a13dc562b4b33aa76b56172c5c30fc94897e5bb369a34f9886
+  - op: upsert
     path: references/semantic-patterns.md
     file: files/references/semantic-patterns.md
     before_sha256: c87b59f025fba1dd6dff404dee64c22eca4db96d2bd14baf6d60ef430eeebaba
   - op: upsert
+    path: references/style-defaults.md
+    file: files/references/style-defaults.md
+    before_sha256: absent
+  - op: upsert
+    path: references/style-guide.md
+    file: files/references/style-guide.md
+    before_sha256: 7bc931f3b80e2704f4554f522bb03886b70a4a6389735ede9aff3087420f6238
+  - op: upsert
+    path: references/svg-primitives.md
+    file: files/references/svg-primitives.md
+    before_sha256: absent
+  - op: upsert
     path: references/type-architecture.md
     file: files/references/type-architecture.md
     before_sha256: cb5672b5c69cbe24a0b18d144f8b2e4507a124ebb0dbc0bc898ceafb27612caa
+  - op: upsert
+    path: references/type-budgets.md
+    file: files/references/type-budgets.md
+    before_sha256: absent
   - op: upsert
     path: references/type-db-schema.md
     file: files/references/type-db-schema.md
@@ -54,6 +86,10 @@ operations:
     path: references/type-high-level.md
     file: files/references/type-high-level.md
     before_sha256: 86e9e681189b013752edc512a8efb651e67aba52e9ddfbfe46d1fc117f1d5248
+  - op: upsert
+    path: references/type-index.md
+    file: files/references/type-index.md
+    before_sha256: absent
   - op: upsert
     path: references/type-it-state.md
     file: files/references/type-it-state.md
@@ -79,10 +115,10 @@ operations:
     file: files/references/type-uml-class.md
     before_sha256: 8cc0bc8f77a38da58110287c1b112043be9751389ef45772fe607eae9aa77ecd
   - op: upsert
-    path: references/profiles.md
-    file: files/references/profiles.md
-    before_sha256: 51f6d24e40eca1a13dc562b4b33aa76b56172c5c30fc94897e5bb369a34f9886
+    path: scripts/prepare_html.py
+    file: files/scripts/prepare_html.py
+    before_sha256: absent
   - op: upsert
-    path: references/style-guide.md
-    file: files/references/style-guide.md
-    before_sha256: 7bc931f3b80e2704f4554f522bb03886b70a4a6389735ede9aff3087420f6238
+    path: scripts/resolve_style.py
+    file: files/scripts/resolve_style.py
+    before_sha256: absent

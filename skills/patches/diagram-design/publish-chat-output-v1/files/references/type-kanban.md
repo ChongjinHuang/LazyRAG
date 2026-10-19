@@ -20,7 +20,7 @@ Every card renders in exactly one of four states. Document and use all four when
 | `waiting / external` | `ink @ 0.02` | `ink @ 0.20` dashed `4,3` | — |
 | `done` | `ink @ 0.05` | `muted` | — |
 
-These map directly onto the core-rules.md §5 node-treatment table (`security` → blocked, `optional` → waiting/external, `store` → done) — the board reuses the system's existing semantic fills rather than inventing new ones.
+These map directly onto the design-details.md §5 node-treatment table (`security` → blocked, `optional` → waiting/external, `store` → done) — the board reuses the system's existing semantic fills rather than inventing new ones.
 
 ## Over-limit column
 

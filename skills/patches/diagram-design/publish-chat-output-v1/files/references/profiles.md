@@ -1,5 +1,7 @@
 # Client profiles
 
+For normal generation, `scripts/resolve_style.py` implements read-only marker-first resolution and returns compact effective tokens. It uses pristine packaged defaults when `profile: default` has no saved snapshot; it does not create or rewrite profiles. The save/load/reset procedures below still manage snapshots and working copies when explicitly requested.
+
 Named profiles let one Diagram Design install serve several clients without repeatedly editing the installed `style-guide.md`. A profile is a complete style guide stored outside the install, so managed plugin updates cannot erase it.
 
 This file is the source of truth for profile resolution and for the `save`, `load`/`switch`, `list`, `show`, `update`, `reset`, and `delete` verbs.
