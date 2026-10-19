@@ -2,6 +2,16 @@
 
 Read this for every diagram. Type references own layout grammar and may explicitly exempt a type from a shared rule. Use the effective style selected through `references/profiles.md`; literal colors in examples do not override a profile.
 
+## Style resolution for generation
+
+Resolve the guide for each diagram; do not carry a selection across projects. This is the generation path from [profiles.md](profiles.md); snapshot management remains there.
+
+- Inspect `<project-root>/.diagram-design` as data. Accept only one `profile: <slug>` line with optional horizontal whitespace and a final newline. Slugs match `[a-z0-9][a-z0-9-]{0,63}`; reject paths, extra keys, comments and prose. Ignore a malformed marker with a visible explanation and use markerless resolution.
+- A valid marker selects `~/.diagram-design/profiles/<slug>.md` directly. Never copy it over the installed guide. If missing, explain and ask which profile to use; do not silently fall back. For `default` snapshot setup/recovery, follow the built-in-default procedure in `profiles.md`.
+- Without a valid marker, read `references/style-guide.md`. A leading profile header identifies its active profile; a missing library entry does not invalidate the working copy, but report it and offer save. Without a header, compare all semantic roles and typography families to shipped defaults: differences mean custom-unsaved (offer save); unchanged values mean default. Do not infer customization from accent alone.
+- For a selected profile, compare required semantic-role and typography rows against the current shipped schema. Backfill missing rows from pristine defaults in memory only, report the repair and offer update. Missing/malformed headings require asking whether to repair. Do not rewrite the named profile or working guide during marker-first generation.
+- Read only the selected guide and the sections needed for this diagram. Profile save/load/list/show/update/reset/delete, onboarding, and failure recovery retain their complete procedures in the existing references.
+
 ## 1. Philosophy
 
 Every node represents a distinct idea and every edge carries information. Merge concepts that always travel together; remove redundant labels/edges. Aim for density 4/10 and 1–2 focal elements. Split over-budget diagrams into overview and detail.
@@ -16,7 +26,7 @@ No gratuitous dark cyan/purple glow, shadows, identical treatment for every node
 
 ## 5. Design system
 
-Use named roles from the effective guide: `paper`/`paper-2` backgrounds, `ink` primary text/strokes, `muted`/`soft` secondary labels and arrows, `rule`/`rule-solid` hairlines, `accent`/`accent-tint` for at most two focal elements, `link` for HTTP/API/external edges. Node treatments and exact font roles come from the resolver. Preserve brand families/weights, disclose fallback fonts; otherwise names use Geist sans, technical values Geist Mono, title Instrument Serif, callouts italic serif. For CJK use the matching Noto/local fallback, 12px minimum; wide/full-width characters cost 1em, other characters their Latin advance, combining marks zero. CJK arrow/legend/tag prose uses 12px sans, weight 500, without tracking/uppercase; expand masks. Detailed language/series/terminal rules remain in [style-guide.md](style-guide.md), loaded only for those features. Series colors are only for charts that need them; terminal is a separate fixed opt-in skin.
+Use named roles from the effective guide: `paper`/`paper-2` backgrounds, `ink` primary text/strokes, `muted`/`soft` secondary labels and arrows, `rule`/`rule-solid` hairlines, `accent`/`accent-tint` for at most two focal elements, `link` for HTTP/API/external edges. Node treatments and exact font roles come from the effective style guide. Preserve brand families/weights, disclose fallback fonts; otherwise names use Geist sans, technical values Geist Mono, title Instrument Serif, callouts italic serif. For CJK use the matching Noto/local fallback, 12px minimum; wide/full-width characters cost 1em, other characters their Latin advance, combining marks zero. CJK arrow/legend/tag prose uses 12px sans, weight 500, without tracking/uppercase; expand masks. Detailed language/series/terminal rules remain in [style-guide.md](style-guide.md), loaded only for those features. Series colors are only for charts that need them; terminal is a separate fixed opt-in skin.
 
 ## 6. Core SVG primitives and connector rules
 
@@ -35,7 +45,7 @@ Use the 4px grid for coordinates, dimensions, padding and gaps (20/24/32/40/48px
 
 ## 9. Pre-output gate
 
-Confirm type/pattern/size and assumptions; load its type reference. Check node/edge meaning, labeled decision exits, all paths ending or looping explicitly, selected complexity budget, ≤2 focal elements and a complete minimal legend. Remove redundant content. Check all six connector rules, legibility, viewBox containment, no clipped labels and grid alignment. Confirm font roles, brand/fallbacks, no shadows/oversized radii/equal generic cards. For imports report merged/collapsed/dropped content; never invent or silently omit source components. Run the installed self-check on the completed file before publication. Detailed upstream checklist: [design-details.md](design-details.md), only when a check needs elaboration.
+Confirm type/pattern/size and assumptions; load its type reference. Check node/edge meaning, labeled decision exits, all paths ending or looping explicitly, selected complexity budget, ≤2 focal elements and a complete minimal legend. Remove redundant content. Check all six connector rules, legibility, viewBox containment, no clipped labels and grid alignment. Confirm font roles, brand/fallbacks, no shadows/oversized radii/equal generic cards. For imports report merged/collapsed/dropped content; never invent or silently omit source components. Run the installed self-check on the completed file before the final reply. Detailed upstream checklist: [design-details.md](design-details.md), only when a check needs elaboration.
 
 ## 12. Output and accessible SVG
 
