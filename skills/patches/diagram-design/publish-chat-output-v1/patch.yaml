@@ -47,10 +47,6 @@ operations:
     file: files/references/semantic-patterns.md
     before_sha256: c87b59f025fba1dd6dff404dee64c22eca4db96d2bd14baf6d60ef430eeebaba
   - op: upsert
-    path: references/style-defaults.md
-    file: files/references/style-defaults.md
-    before_sha256: absent
-  - op: upsert
     path: references/style-guide.md
     file: files/references/style-guide.md
     before_sha256: 7bc931f3b80e2704f4554f522bb03886b70a4a6389735ede9aff3087420f6238
@@ -114,11 +110,3 @@ operations:
     path: references/type-uml-class.md
     file: files/references/type-uml-class.md
     before_sha256: 8cc0bc8f77a38da58110287c1b112043be9751389ef45772fe607eae9aa77ecd
-  - op: upsert
-    path: scripts/prepare_html.py
-    file: files/scripts/prepare_html.py
-    before_sha256: absent
-  - op: upsert
-    path: scripts/resolve_style.py
-    file: files/scripts/resolve_style.py
-    before_sha256: absent

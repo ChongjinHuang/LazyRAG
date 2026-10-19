@@ -1,6 +1,6 @@
 # Core diagram rules
 
-Read this for every diagram. Type references own layout grammar and may explicitly exempt a type from a shared rule. Use the effective style returned by `scripts/resolve_style.py`; literal colors in examples do not override a profile.
+Read this for every diagram. Type references own layout grammar and may explicitly exempt a type from a shared rule. Use the effective style selected through `references/profiles.md`; literal colors in examples do not override a profile.
 
 ## 1. Philosophy
 
