@@ -1,6 +1,6 @@
 schema_version: 1
 id: diagram-design/publish-chat-output-v1
-description: Clarify extractor scope and publish finished diagrams as LazyMind chat artifacts
+description: Preserve shared diagram rules and profile resolution while publishing finished chat artifacts
 target:
   uid: bsk_511CA68AE122BBDFF527864096EB
   version: 0.0.0+08dc4a36ad25
@@ -10,3 +10,79 @@ operations:
     path: SKILL.md
     file: files/SKILL.md
     before_sha256: 1801db2ce04d82e52154098c99d63ddc87c552fda5186d261919ed6e02183158
+  - op: upsert
+    path: references/core-rules.md
+    file: files/references/core-rules.md
+    before_sha256: absent
+  - op: upsert
+    path: references/import-drawio.md
+    file: files/references/import-drawio.md
+    before_sha256: 2615ba8efb300ecc498df72223a91c6c712411efb38892fc779b583ad8b7b4ce
+  - op: upsert
+    path: references/import-mermaid.md
+    file: files/references/import-mermaid.md
+    before_sha256: 86d4229aeffb125d4db08bf2cc12bf031dbc73fdc6584fa880a20effb4cad262
+  - op: upsert
+    path: references/output-spec.md
+    file: files/references/output-spec.md
+    before_sha256: 374a4f1f7e70e5e970d6df427516273fe67e7616aa3a9d06c5787924daa1ed9b
+  - op: upsert
+    path: references/semantic-patterns.md
+    file: files/references/semantic-patterns.md
+    before_sha256: c87b59f025fba1dd6dff404dee64c22eca4db96d2bd14baf6d60ef430eeebaba
+  - op: upsert
+    path: references/type-architecture.md
+    file: files/references/type-architecture.md
+    before_sha256: cb5672b5c69cbe24a0b18d144f8b2e4507a124ebb0dbc0bc898ceafb27612caa
+  - op: upsert
+    path: references/type-db-schema.md
+    file: files/references/type-db-schema.md
+    before_sha256: 433f2ede171453ccbc1e6e8d0be4846fa5fb88bb499e8ba7e6db02d066a06c46
+  - op: upsert
+    path: references/type-deployment.md
+    file: files/references/type-deployment.md
+    before_sha256: d3d33ff53bb8bdb7b15bcc3b23d1009ee68b40638588dd054d0ab993fb480fd5
+  - op: upsert
+    path: references/type-dp-integration.md
+    file: files/references/type-dp-integration.md
+    before_sha256: 0b85e3b883e97e1a86e50d2e50eb73bc3fb4b70e2e3132e93356956ccc68a64f
+  - op: upsert
+    path: references/type-fishbone.md
+    file: files/references/type-fishbone.md
+    before_sha256: d2f1c043fd40f5a20305bcc8b835b852b77a26b77516c3bbd813abf70dfa4f20
+  - op: upsert
+    path: references/type-high-level.md
+    file: files/references/type-high-level.md
+    before_sha256: 86e9e681189b013752edc512a8efb651e67aba52e9ddfbfe46d1fc117f1d5248
+  - op: upsert
+    path: references/type-it-state.md
+    file: files/references/type-it-state.md
+    before_sha256: 744e18db2ddf29e501af903ef79deafb1500f546611137d27cd14fe8ccbb77db
+  - op: upsert
+    path: references/type-kanban.md
+    file: files/references/type-kanban.md
+    before_sha256: e64138a2629db2bf1de6aa4f4979088777a08c1426ef122c57f200aae20fc7eb
+  - op: upsert
+    path: references/type-loop.md
+    file: files/references/type-loop.md
+    before_sha256: c7e98b8eda1e6d6904920f4d96310745deb0651920e9d531c8f40e54304ab60d
+  - op: upsert
+    path: references/type-sankey.md
+    file: files/references/type-sankey.md
+    before_sha256: bcc39b963fa4f340c7654204fa0c6c0a248a0b42b1669ebeb2375381d8013a2c
+  - op: upsert
+    path: references/type-sequence.md
+    file: files/references/type-sequence.md
+    before_sha256: 21c3ef9a491068e871aae99f035883d3c982255df97db1effaf0c3301f562865
+  - op: upsert
+    path: references/type-uml-class.md
+    file: files/references/type-uml-class.md
+    before_sha256: 8cc0bc8f77a38da58110287c1b112043be9751389ef45772fe607eae9aa77ecd
+  - op: upsert
+    path: references/profiles.md
+    file: files/references/profiles.md
+    before_sha256: 51f6d24e40eca1a13dc562b4b33aa76b56172c5c30fc94897e5bb369a34f9886
+  - op: upsert
+    path: references/style-guide.md
+    file: files/references/style-guide.md
+    before_sha256: 7bc931f3b80e2704f4554f522bb03886b70a4a6389735ede9aff3087420f6238

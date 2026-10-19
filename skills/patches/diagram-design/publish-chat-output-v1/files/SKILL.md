@@ -8,17 +8,17 @@ metadata:
 
 # Diagram Design
 
-Create a clear, accessible diagram and deliver it as a self-contained HTML file with inline SVG and CSS. The installed `references/` directory contains detailed design rules; load only the reference for the selected diagram type. Do not read the entire skill package before drawing.
+Create a clear, accessible diagram and deliver it as a self-contained HTML file with inline SVG and CSS. Read `references/core-rules.md` for the shared diagram rules and the reference for the selected diagram type. Do not read the entire skill package before drawing.
 
 ## Decide what to draw
 
 - Use a flowchart for decisions and approval paths (`references/type-flowchart.md`); a sequence diagram for messages ordered in time (`references/type-sequence.md`); an architecture diagram for components and connections (`references/type-architecture.md`); a swimlane when handoffs between roles are the point (`references/type-swimlane.md`). For other types, find the matching `references/type-*.md` and read that one reference.
 - Use the facts the user supplied. Ask only for missing information that changes the essential nodes, order, or branches. When a reasonable assumption is enough, mark it beside the diagram instead of blocking delivery. Do not add an unrequested process rule as fact.
-- Use the default palette in `references/style-guide.md` when no project brand or profile is specified. Read `references/profiles.md` or `references/onboarding.md` only when the user requests branding or points to a profile. A default style is not a reason to delay the diagram.
+- Before every diagram, inspect the project root for `.diagram-design` and resolve the effective style guide by `references/profiles.md` (marker first, then the working copy). A valid marker loads its named profile directly, including `profile: default`; a missing named profile must be reported and resolved with the user, never silently replaced. For an invalid marker, report it and follow the markerless fallback. Read the selected guide before drawing. If the markerless guide is still the shipped default, proceed unless the user asks for branding; use `references/onboarding.md` only for requested customization.
 
 ## Draw and check
 
-1. Choose a diagram type and read its type reference. If the diagram has a behavior pattern that needs specialized semantics, read `references/semantic-patterns.md`. Use `assets/template.html` as a starting point when file tools are available.
+1. Choose a diagram type and read `references/core-rules.md` plus its type reference. If the diagram has a behavior pattern that needs specialized semantics, read `references/semantic-patterns.md`. Use `assets/template.html` as a starting point when file tools are available.
 2. Build one complete `.html` document with embedded CSS and an inline `<svg>`. Make the viewBox contain every node and connector. Keep labels legible, distinguish approval and rejection paths, and give every decision an explicit next step or end. Avoid external images and scripts; motion is optional only when requested.
 3. Give the SVG `role="img"`, a unique `aria-labelledby`, and matching first-child `<title>` and `<desc>`. Check that connectors attach to nodes without crossing labels or clipping the viewBox. If a file was written and the installed script is available, run `python3 scripts/self_check.py <html-file>`; fix any failures before publishing.
 
