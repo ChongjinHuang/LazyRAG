@@ -51,6 +51,10 @@ from lazymind.chat.service.document_selection import (
     resolve_document_selection_context,
 )
 from lazymind.chat.service.component.tool_policy import build_sidechat_tool_configs
+from lazymind.chat.service.component.image_delivery_guard import (
+    ImageDeliveryGuard,
+    expects_image_delivery,
+)
 from lazymind.chat.service.component import (
     AgentEventFrameTranslator,
     ASK_USER_TOOL_CONFIG,
@@ -2306,6 +2310,10 @@ async def _handle_chat_impl(
             lazyllm.locals.clear()
 
     async def event_stream() -> Any:
+        image_delivery = ImageDeliveryGuard(
+            expected=expects_image_delivery(task_profile, language_query),
+            language=translator.language,
+        )
         final_result: Any = None
         from lazymind.chat.runtime_events import RunOutcome
 
@@ -2349,7 +2357,8 @@ async def _handle_chat_impl(
                 async with aclosing(guarded_agent_stream):
                     async for kind, payload in guarded_agent_stream:
                         if kind == 'event':
-                            for frame in translator.feed(payload):
+                            image_delivery.observe(payload)
+                            for frame in image_delivery.filter_frames(payload, translator.feed(payload)):
                                 cost = round(time.time() - start_time, 3)
                                 yield log_and_emit_frame(frame, cost, query, conversation.session_id, tag='FEED')
                         else:
@@ -2357,7 +2366,7 @@ async def _handle_chat_impl(
                             # AgentExecutor propagates future exceptions before yielding final.
                             final_result = payload
 
-            for frame in translator.finish(final_result):
+            for frame in image_delivery.finish(translator.finish(final_result)):
                 cost = round(time.time() - start_time, 3)
                 yield log_and_emit_frame(frame, cost, query, conversation.session_id, tag='FINISH')
 
